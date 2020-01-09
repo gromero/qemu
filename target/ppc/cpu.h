@@ -979,8 +979,10 @@ struct ppc_radix_page_info {
 #define PPC_TLB_EPID_LOAD 8
 #define PPC_TLB_EPID_STORE 9
 
-#define PPC_CPU_OPCODES_LEN          0x40
+#define PPC_CPU_OPCODES_LEN          0xc0
 #define PPC_CPU_INDIRECT_OPCODES_LEN 0x20
+#define PPC_CPU_PREFIXED_OPCODE_OFFSET 0x40
+#define PPC_CPU_PREFIXED_MODIFIED_OPCODE_OFFSET 0x80
 
 struct CPUPPCState {
     /* Most commonly used resources during translated code execution first */
