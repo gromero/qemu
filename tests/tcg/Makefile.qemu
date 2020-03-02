@@ -26,6 +26,8 @@ include $(SRC_PATH)/tests/docker/Makefile.include
 
 ifdef CROSS_CC_GUEST
 
+quiet-command = $(if $(V),$1,$(if $(2),@printf "  %-7s %s\n" $2 $3 && $1, @$1))
+
 .PHONY: cross-build-guest-tests
 cross-build-guest-tests:
 	$(call quiet-command, \

@@ -1,0 +1,13 @@
+# -*- Mode: makefile -*-
+#
+# PPC - included from tests/tcg/Makefile.qemu
+#
+
+VPATH += $(SRC_PATH)/tests/tcg/$(TARGET_NAME)/instruction-tests
+
+PPC_TESTS = test-prefixed-load-store
+
+TESTS += $(PPC_TESTS)
+
+test-prefixed-load-store: test-prefixed-load-store.c
+	gcc $< -o test-prefixed-load-store
