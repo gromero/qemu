@@ -1,0 +1,14 @@
+# -*- Mode: makefile -*-
+#
+# PPC - included from tests/tcg/Makefile
+#
+
+# On PPC64 Linux can be configured with 4k (default) or 64k pages (currently broken)
+EXTRA_RUNS+=run-test-mmap-4096 #run-test-mmap-65536
+
+VPATH += $(SRC_PATH)/tests/tcg/$(TARGET_NAME)/instruction-tests
+QEMU_OPTS += -cpu power10
+
+PPC_TESTS = test-prefixed-load-store
+
+TESTS += $(PPC_TESTS)
