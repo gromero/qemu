@@ -10,6 +10,7 @@ VPATH += $(SRC_PATH)/tests/tcg/$(TARGET_NAME)/instruction-tests
 QEMU_OPTS += -cpu power10
 
 PPC_TESTS = test-prefixed-load-store
+PPC_TESTS += test-prefixed-load-store-fp
 PPC_VSX_TESTS = test-paired-load-store-vsx
 
 VSX_CFLAGS = -maltivec -mvsx
