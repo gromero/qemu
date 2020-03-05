@@ -290,6 +290,52 @@ static void gen_##name(DisasContext *ctx)                   \
 VSX_VECTOR_LOAD(lxv, ld_i64, 0)
 VSX_VECTOR_LOAD(lxvx, ld_i64, 1)
 
+static void gen_plxv(DisasContext *ctx)
+{
+    int xt;
+    TCGv EA;
+    TCGv_i64 xth;
+    TCGv_i64 xtl;
+
+    xt = PREFIXED_xT(ctx->opcode);
+
+    if (xt < 32) {
+        if (unlikely(!ctx->vsx_enabled)) {
+            gen_exception(ctx, POWERPC_EXCP_VSXU);
+            return;
+        }
+    } else {
+        if (unlikely(!ctx->altivec_enabled)) {
+            gen_exception(ctx, POWERPC_EXCP_VPU);
+            return;
+        }
+    }
+    xth = tcg_temp_new_i64();
+    xtl = tcg_temp_new_i64();
+    gen_set_access_type(ctx, ACCESS_INT);
+    EA = tcg_temp_new();
+    if (gen_addr_imm34_index(ctx, EA)) {
+        goto out;
+    }
+    if (ctx->le_mode) {
+        tcg_gen_qemu_ld_i64(xtl, EA, ctx->mem_idx, MO_LEQ);
+        set_cpu_vsrl(xt, xtl);
+        tcg_gen_addi_tl(EA, EA, 8);
+        tcg_gen_qemu_ld_i64(xth, EA, ctx->mem_idx, MO_LEQ);
+        set_cpu_vsrh(xt, xth);
+    } else {
+        tcg_gen_qemu_ld_i64(xth, EA, ctx->mem_idx, MO_BEQ);
+        set_cpu_vsrh(xt, xth);
+        tcg_gen_addi_tl(EA, EA, 8);
+        tcg_gen_qemu_ld_i64(xtl, EA, ctx->mem_idx, MO_BEQ);
+        set_cpu_vsrl(xt, xtl);
+    }
+out:
+    tcg_temp_free(EA);
+    tcg_temp_free_i64(xth);
+    tcg_temp_free_i64(xtl);
+}
+
 #define VSX_VECTOR_STORE(name, op, indexed)                 \
 static void gen_##name(DisasContext *ctx)                   \
 {                                                           \
@@ -465,6 +511,33 @@ static void gen_##name(DisasContext *ctx)                         \
 
 VSX_LOAD_SCALAR_DS(lxsd, ld64_i64)
 VSX_LOAD_SCALAR_DS(lxssp, ld32fs)
+
+#define VSX_LOAD_SCALAR_IMM34(name, operation)                       \
+static void gen_##name(DisasContext *ctx)                         \
+{                                                                 \
+    TCGv EA;                                                      \
+    TCGv_i64 xth;                                                 \
+                                                                  \
+    if (unlikely(!ctx->altivec_enabled)) {                        \
+        gen_exception(ctx, POWERPC_EXCP_VPU);                     \
+        return;                                                   \
+    }                                                             \
+    xth = tcg_temp_new_i64();                                     \
+    gen_set_access_type(ctx, ACCESS_INT);                         \
+    EA = tcg_temp_new();                                          \
+    if (gen_addr_imm34_index(ctx, EA)) {                          \
+        goto out;                                                 \
+    }                                                             \
+    gen_qemu_##operation(ctx, xth, EA);                           \
+    set_cpu_vsrh(rD(ctx->opcode) + 32, xth);                      \
+    /* NOTE: cpu_vsrl is undefined */                             \
+out:                                                              \
+    tcg_temp_free(EA);                                            \
+    tcg_temp_free_i64(xth);                                       \
+}
+
+VSX_LOAD_SCALAR_IMM34(plxsd, ld64_i64)
+VSX_LOAD_SCALAR_IMM34(plxssp, ld32fs)
 
 #define VSX_STORE_SCALAR(name, operation)                     \
 static void gen_##name(DisasContext *ctx)                     \
