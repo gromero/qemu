@@ -2354,6 +2354,7 @@ enum {
     PCR_VEC_DIS         = PPC_BIT(0), /* Vec. disable (bit NA since POWER8) */
     PCR_VSX_DIS         = PPC_BIT(1), /* VSX disable (bit NA since POWER8) */
     PCR_TM_DIS          = PPC_BIT(2), /* Trans. memory disable (POWER8) */
+    PCR_MMA             = PPC_BIT(3), /* Matrix-Multiply Accelerator */
 };
 
 /* HMER/HMEER */
