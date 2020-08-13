@@ -235,6 +235,9 @@ typedef union _ppc_vsr_t {
 typedef ppc_vsr_t ppc_avr_t;
 typedef ppc_vsr_t ppc_fprp_t;
 
+/* VSX accumulator registers (4 * 128 bits) */
+typedef ppc_vsr_t ppc_acc_t[4];
+
 #if !defined(CONFIG_USER_ONLY)
 /* Software TLB cache */
 typedef struct ppc6xx_tlb_t ppc6xx_tlb_t;
@@ -1049,6 +1052,8 @@ struct CPUPPCState {
     uint32_t vscr;
     /* VSX registers (including FP and AVR) */
     ppc_vsr_t vsr[64] QEMU_ALIGNED(16);
+    /* VSX accumulator registers */
+    ppc_acc_t vsr_acc[8] QEMU_ALIGNED(16);
     /* Non-zero if and only if VSCR_SAT should be set */
     ppc_vsr_t vscr_sat QEMU_ALIGNED(16);
     /* SPE registers */

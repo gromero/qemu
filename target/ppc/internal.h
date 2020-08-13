@@ -238,6 +238,7 @@ EXTRACT_HELPER(IMM8, 11, 8);
 EXTRACT_HELPER(DCMX, 16, 7);
 EXTRACT_HELPER_SPLIT_3(DCMX_XV, 5, 16, 0, 1, 2, 5, 1, 6, 6);
 EXTRACT_HELPER_SPLIT_SHIFTED(xTp, 21, 1, 22, 4, 1);
+EXTRACT_HELPER(ACC, 23, 3);
 
 void helper_compute_fprf_float16(CPUPPCState *env, float16 arg);
 void helper_compute_fprf_float32(CPUPPCState *env, float32 arg);

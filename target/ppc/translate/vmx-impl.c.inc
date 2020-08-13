@@ -26,6 +26,11 @@ static void glue(gen_, name)(DisasContext *ctx)                               \
     gen_set_access_type(ctx, ACCESS_INT);                                     \
     avr = tcg_temp_new_i64();                                                 \
     EA = tcg_temp_new();                                                      \
+    g_warning("op: %s, rA: %d, rB: %d, avr: %d",                            \
+              #name,                                                         \
+              rA(ctx->opcode),               \
+              rB(ctx->opcode),                                     \
+              rD(ctx->opcode));                                             \
     gen_addr_reg_index(ctx, EA);                                              \
     tcg_gen_andi_tl(EA, EA, ~0xf);                                            \
     /*                                                                        \

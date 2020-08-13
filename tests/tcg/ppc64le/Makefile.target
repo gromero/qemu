@@ -11,7 +11,7 @@ QEMU_OPTS += -cpu power10
 
 PPC_TESTS = test-prefixed-load-store
 PPC_TESTS += test-prefixed-load-store-fp
-PPC_VSX_TESTS = test-paired-load-store-vsx
+PPC_VSX_TESTS = test-paired-load-store-vsx test-matrix-multiply-assist-vsx
 
 VSX_CFLAGS = -maltivec -mvsx
 $(PPC_VSX_TESTS): CFLAGS+=$(VSX_CFLAGS)

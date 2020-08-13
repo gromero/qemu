@@ -488,6 +488,88 @@ VSX_VECTOR_LOAD_STORE_PAIRED(stxvpx, 0, store)
 
 #endif
 
+#ifdef TARGET_PPC64
+
+static inline TCGv_ptr gen_vsr_acc_ptr(int reg)
+{
+    TCGv_ptr r = tcg_temp_new_ptr();
+    tcg_gen_addi_ptr(r, cpu_env, vsr_full_offset(reg));
+    return r;
+}
+
+static inline int vsr_acc64_offset(int n, int i, bool high)
+{
+    return offsetof(CPUPPCState, vsr_acc[n][i].VsrD(high ? 0 : 1));
+}
+
+static inline void get_cpu_vsr_accl(TCGv_i64 dst, int n, int i)
+{
+    tcg_gen_ld_i64(dst, cpu_env, vsr_acc64_offset(n, i, false));
+}
+
+static inline void get_cpu_vsr_acch(TCGv_i64 dst, int n, int i)
+{
+    tcg_gen_ld_i64(dst, cpu_env, vsr_acc64_offset(n, i, true));
+}
+
+static inline void set_cpu_vsr_accl(int n, int i, TCGv_i64 src)
+{
+    tcg_gen_st_i64(src, cpu_env, vsr_acc64_offset(n, i, false));
+}
+
+static inline void set_cpu_vsr_acch(int n, int i, TCGv_i64 src)
+{
+    tcg_gen_st_i64(src, cpu_env, vsr_acc64_offset(n, i, true));
+}
+
+static void gen_xxmfacc(DisasContext *ctx) {
+    TCGv_i64 vsrh = tcg_temp_new_i64();
+    TCGv_i64 vsrl = tcg_temp_new_i64();
+    int i;
+
+    for (i = 0; i < 4; i++) {
+        get_cpu_vsr_accl(vsrl, ACC(ctx->opcode), i);
+        get_cpu_vsr_acch(vsrh, ACC(ctx->opcode), i);
+        set_cpu_vsrl(ACC(ctx->opcode) * 4 + i, vsrl);
+        set_cpu_vsrh(ACC(ctx->opcode) * 4 + i, vsrh);
+    }
+
+    tcg_temp_free(vsrh);
+    tcg_temp_free(vsrl);
+}
+
+static void gen_xxmtacc(DisasContext *ctx) {
+    TCGv_i64 vsrh = tcg_temp_new_i64();
+    TCGv_i64 vsrl = tcg_temp_new_i64();
+    int i;
+
+    for (i = 0; i < 4; i++) {
+        get_cpu_vsrl(vsrl, ACC(ctx->opcode) * 4 + i);
+        get_cpu_vsrh(vsrh, ACC(ctx->opcode) * 4 + i);
+        set_cpu_vsr_accl(ACC(ctx->opcode), i, vsrl);
+        set_cpu_vsr_acch(ACC(ctx->opcode), i, vsrh);
+    }
+
+    tcg_temp_free(vsrh);
+    tcg_temp_free(vsrl);
+}
+
+static void gen_xxsetacc(DisasContext *ctx) {
+    TCGv_i64 vsr = tcg_temp_new_i64();
+    int i;
+
+    tcg_gen_movi_i64(vsr, 0);
+
+    for (i = 0; i < 4; i++) {
+        set_cpu_vsr_accl(ACC(ctx->opcode), i, vsr);
+        set_cpu_vsr_acch(ACC(ctx->opcode), i, vsr);
+    }
+
+    tcg_temp_free(vsr);
+}
+
+#endif
+
 #define VSX_LOAD_SCALAR_DS(name, operation)                       \
 static void gen_##name(DisasContext *ctx)                         \
 {                                                                 \
