@@ -27,7 +27,7 @@
 
 /* #define DEBUG_OP */
 /* #define DEBUG_SOFTWARE_TLB */
-/* #define DEBUG_EXCEPTIONS */
+// #define DEBUG_EXCEPTIONS
 
 #ifdef DEBUG_EXCEPTIONS
 #  define LOG_EXCP(...) qemu_log(__VA_ARGS__)
@@ -443,6 +443,10 @@ static inline void powerpc_excp(PowerPCCPU *cpu, int excp_model, int excp)
     case POWERPC_EXCP_FPU:       /* Floating-point unavailable exception     */
     case POWERPC_EXCP_APU:       /* Auxiliary processor unavailable          */
     case POWERPC_EXCP_DECR:      /* Decrementer exception                    */
+        break;
+    case POWERPC_EXCP_EBB:       /* Event-based branch                       */
+        powerpc_set_excp_state(cpu, (target_ulong)(env->spr[SPR_EBBHR]), env->msr);
+        return;
         break;
     case POWERPC_EXCP_FIT:       /* Fixed-interval timer interrupt           */
         /* FIT on 4xx */
@@ -978,6 +982,11 @@ static void ppc_hw_interrupt(CPUPPCState *env)
             }
             powerpc_excp(cpu, env->excp_model, POWERPC_EXCP_DECR);
             return;
+        }
+        /* PMC -> Event-based branch exception */
+        if (env->pending_interrupts & (1 << PPC_INTERRUPT_PMC)) {
+            env->pending_interrupts &= ~(1 << PPC_INTERRUPT_PMC);
+            powerpc_excp(cpu, env->excp_model,  POWERPC_EXCP_EBB);
         }
         if (env->pending_interrupts & (1 << PPC_INTERRUPT_DOORBELL)) {
             env->pending_interrupts &= ~(1 << PPC_INTERRUPT_DOORBELL);

@@ -128,8 +128,10 @@ enum {
     /* ISA 3.00 additions */
     POWERPC_EXCP_HVIRT    = 101,
     POWERPC_EXCP_SYSCALL_VECTORED = 102, /* scv exception                     */
+    /* Event-based branch exception */
+    POWERPC_EXCP_EBB = 103,
     /* EOL                                                                   */
-    POWERPC_EXCP_NB       = 103,
+    POWERPC_EXCP_NB       = 104,
     /* QEMU exceptions: used internally during code translation              */
     POWERPC_EXCP_STOP         = 0x200, /* stop translation                   */
     POWERPC_EXCP_BRANCH       = 0x201, /* branch instruction                 */
@@ -1059,6 +1061,7 @@ struct CPUPPCState {
     /* Internal devices resources */
     ppc_tb_t *tb_env;      /* Time base and decrementer */
     ppc_dcr_t *dcr_env;    /* Device control registers */
+    ppc_ictr_t *ictr_env;  /* Fake instruction counter */
 
     int dcache_line_size;
     int icache_line_size;
@@ -1255,6 +1258,7 @@ extern const VMStateDescription vmstate_ppc_cpu;
 #endif
 
 /*****************************************************************************/
+void mock(void);
 void ppc_translate_init(void);
 /*
  * you can call this signal handler from your SIGBUS and SIGSEGV
@@ -2343,6 +2347,7 @@ enum {
     PPC_INTERRUPT_HMI,            /* Hypervisor Maintainance interrupt    */
     PPC_INTERRUPT_HDOORBELL,      /* Hypervisor Doorbell interrupt        */
     PPC_INTERRUPT_HVIRT,          /* Hypervisor virtualization interrupt  */
+    PPC_INTERRUPT_PMC,            /* Performance Monitor Counter interrupt*/
 };
 
 /* Processor Compatibility mask (PCR) */

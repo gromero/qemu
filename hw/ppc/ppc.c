@@ -1134,6 +1134,80 @@ clk_setup_cb cpu_ppc_tb_init (CPUPPCState *env, uint32_t freq)
     return &cpu_ppc_set_tb_clk;
 }
 
+static void cpu_ppc_ictr_excp(PowerPCCPU *cpu)
+{
+    CPUPPCState *env = &cpu->env;
+    // int64_t ctr;
+    int64_t now;
+    // int cpu_id;
+
+    // ctr = env->ictr_env->ictr[ICTR_GENERIC]++;
+    env->ictr_env->ictr[ICTR_GENERIC]++;
+
+    /* Raise exception to deliver an EBB only if SPR_EBBRR is
+     * equal to magic number 0xbee.
+     */
+    printf("ICTR timer triggered...\n");
+    printf("CPU ID: %d\n", cpu->vcpu_id);
+    printf("SPR_EBBRR = %lx\n", env->spr[SPR_EBBRR]);
+    printf("MSR = %lx [%s]\n", env->msr, env->msr & (1<<14) ? "PR" : "  ");
+
+    /* Adjust timer to be triggered in 4 seconds */
+    now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    timer_mod(env->ictr_env->ictr_timer, now+4000000000ULL);
+
+    if (env->spr[SPR_EBBRR] == 0xbee) {
+        printf("** raise event-based branch exception **\n");
+        ppc_set_irq(cpu, PPC_INTERRUPT_PMC, 1);
+	env->ictr_env->ictr[ICTR_GENERIC] = 0;
+    }
+}
+
+static void cpu_ppc_ictr_cb(void *opaque)
+{
+    PowerPCCPU *cpu = opaque;
+
+    cpu_ppc_ictr_excp(cpu);
+}
+
+static void cpu_ppc_set_ictr_clk(void *opaque)
+{
+    CPUPPCState *env = opaque;
+//  PowerPCCPU *cpu = env_archcpu(env);
+    int i;
+
+    for (i = 0; i < ICTR_NUM; i++)
+        env->ictr_env->ictr[i] = 0;
+}
+
+pmu_setup_cb cpu_ppc_ictr_init (CPUPPCState *env)
+{
+    PowerPCCPU *cpu = env_archcpu(env);
+    ppc_ictr_t *ictr_env;
+    QEMUTimer *tmr;
+    uint64_t now;
+
+    ictr_env = g_malloc0(sizeof(ppc_ictr_t));
+    env->ictr_env = ictr_env;
+
+    /* Register timer */
+
+    tmr = timer_new_ns(QEMU_CLOCK_VIRTUAL, &cpu_ppc_ictr_cb, cpu);
+    ictr_env->ictr_timer = tmr;
+
+    cpu_ppc_set_ictr_clk(env);
+
+    /* Calculate the next timer event */
+    now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    // next = now + muldiv64(value, NANOSECONDS_PER_SECOND, 512000000ULL);
+    // *nextp = next;
+
+    /* Adjust timer */
+    timer_mod(tmr, now+1000000000ULL);
+
+    return &cpu_ppc_set_ictr_clk;
+}
+
 /* Specific helpers for POWER & PowerPC 601 RTC */
 void cpu_ppc601_store_rtcu (CPUPPCState *env, uint32_t value)
 {

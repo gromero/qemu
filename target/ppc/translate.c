@@ -76,6 +76,14 @@ static TCGv_i32 cpu_access_type;
 
 #include "exec/gen-icount.h"
 
+void mock(void)
+{
+  uint64_t insns;
+
+  insns = cpu_get_icount();
+  printf("cpu_get_icount() = %ld\n", insns);
+}
+
 void ppc_translate_init(void)
 {
     int i;
@@ -1878,6 +1886,7 @@ static void gen_rfebb(DisasContext *ctx)
     gen_sync_exception(ctx);
 
     tcg_temp_free(target);
+    mock();
 }
 
 #endif

@@ -38,6 +38,19 @@ struct ppc_tb_t {
     uint32_t flags;
 };
 
+typedef void (*pmu_setup_cb)(void *opaque);
+
+enum {
+	ICTR_GENERIC = 0, /* Generic instruction     */
+	ICTR_NOOP,        /* (and 0,0,0) instruction */
+	ICTR_NUM
+};
+
+struct ppc_ictr_t {
+    int64_t ictr[ICTR_NUM]; /* Instruction counters */
+    QEMUTimer *ictr_timer;  /* Common registered timer */
+};
+
 /* PPC Timers flags */
 #define PPC_TIMER_BOOKE              (1 << 0) /* Enable Booke support */
 #define PPC_TIMER_E500               (1 << 1) /* Enable e500 support */
@@ -63,6 +76,9 @@ int ppc_dcr_register (CPUPPCState *env, int dcrn, void *opaque,
                       dcr_read_cb drc_read, dcr_write_cb dcr_write);
 clk_setup_cb ppc_40x_timers_init (CPUPPCState *env, uint32_t freq,
                                   unsigned int decr_excp);
+
+/* PMC */
+pmu_setup_cb cpu_ppc_ictr_init (CPUPPCState *env);
 
 /* Embedded PowerPC reset */
 void ppc40x_core_reset(PowerPCCPU *cpu);

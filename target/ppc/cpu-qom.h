@@ -39,6 +39,7 @@ typedef struct PowerPCCPU PowerPCCPU;
 typedef struct CPUPPCState CPUPPCState;
 typedef struct ppc_tb_t ppc_tb_t;
 typedef struct ppc_dcr_t ppc_dcr_t;
+typedef struct ppc_ictr_t ppc_ictr_t;
 
 /*****************************************************************************/
 /* MMU model                                                                 */
