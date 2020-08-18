@@ -444,8 +444,15 @@ static inline void powerpc_excp(PowerPCCPU *cpu, int excp_model, int excp)
     case POWERPC_EXCP_APU:       /* Auxiliary processor unavailable          */
     case POWERPC_EXCP_DECR:      /* Decrementer exception                    */
         break;
-    case POWERPC_EXCP_EBB:       /* Event-based branch                       */
-        powerpc_set_excp_state(cpu, (target_ulong)(env->spr[SPR_EBBHR]), env->msr);
+    case POWERPC_EXCP_EBB:       /* Event-based branch exception             */
+        if ((env->spr[SPR_BESCR] & (BESCR_PME|BESCR_PMEO|BESCR_GE)) ==
+            (BESCR_PME|!BESCR_PMEO|BESCR_GE)) { // XXX: Not sure about BESCR_PMEO here
+            target_ulong nip;
+            env->spr[SPR_BESCR] &= ~BESCR_GE;   // Clear GE
+            env->spr[SPR_EBBRR] = env->nip;     // Save NIP for rfebb insn
+            nip = env->spr[SPR_EBBHR];          // EBB handler
+            powerpc_set_excp_state(cpu, nip, env->msr);
+        }
         return;
         break;
     case POWERPC_EXCP_FIT:       /* Fixed-interval timer interrupt           */
@@ -985,8 +992,14 @@ static void ppc_hw_interrupt(CPUPPCState *env)
         }
         /* PMC -> Event-based branch exception */
         if (env->pending_interrupts & (1 << PPC_INTERRUPT_PMC)) {
-            env->pending_interrupts &= ~(1 << PPC_INTERRUPT_PMC);
-            powerpc_excp(cpu, env->excp_model,  POWERPC_EXCP_EBB);
+            /*
+             * Performance Monitor event-based exception can only
+             * occur in problem state.
+             */
+            if (msr_pr == 1 && msr_s == 1) {
+                env->pending_interrupts &= ~(1 << PPC_INTERRUPT_PMC);
+                powerpc_excp(cpu, env->excp_model, POWERPC_EXCP_EBB);
+            }
         }
         if (env->pending_interrupts & (1 << PPC_INTERRUPT_DOORBELL)) {
             env->pending_interrupts &= ~(1 << PPC_INTERRUPT_DOORBELL);
