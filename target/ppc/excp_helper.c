@@ -996,7 +996,7 @@ static void ppc_hw_interrupt(CPUPPCState *env)
              * Performance Monitor event-based exception can only
              * occur in problem state.
              */
-            if (msr_pr == 1 && msr_s == 1) {
+            if (msr_pr == 1) {
                 env->pending_interrupts &= ~(1 << PPC_INTERRUPT_PMC);
                 powerpc_excp(cpu, env->excp_model, POWERPC_EXCP_EBB);
             }
