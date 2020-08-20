@@ -1880,12 +1880,19 @@ static void gen_darn(DisasContext *ctx)
 static void gen_rfebb(DisasContext *ctx)
 {
     TCGv target = tcg_temp_new();
+    TCGv bescr = tcg_temp_new();
 
     gen_load_spr(target, SPR_EBBRR);
     tcg_gen_mov_tl(cpu_nip, target);
+
+    gen_load_spr(bescr, SPR_BESCR);
+    tcg_gen_ori_tl(bescr, bescr, BESCR_GE);
+    gen_store_spr(SPR_BESCR, bescr);
+
     gen_sync_exception(ctx);
 
     tcg_temp_free(target);
+    tcg_temp_free(bescr);
     mock();
 }
 
