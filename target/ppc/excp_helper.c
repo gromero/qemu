@@ -445,8 +445,8 @@ static inline void powerpc_excp(PowerPCCPU *cpu, int excp_model, int excp)
     case POWERPC_EXCP_DECR:      /* Decrementer exception                    */
         break;
     case POWERPC_EXCP_EBB:       /* Event-based branch exception             */
-        if ((env->spr[SPR_BESCR] & (BESCR_PME|BESCR_PMEO|BESCR_GE)) ==
-            (BESCR_PME|!BESCR_PMEO|BESCR_GE)) { // XXX: Not sure about BESCR_PMEO here
+        if ((env->spr[SPR_BESCR] & (BESCR_PME|BESCR_GE)) ==
+            (BESCR_PME|BESCR_GE)) {
             target_ulong nip;
             env->spr[SPR_BESCR] &= ~BESCR_GE;   // Clear GE
             env->spr[SPR_BESCR] |= BESCR_PMEO;  // Set PMEO
