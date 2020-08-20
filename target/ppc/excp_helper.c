@@ -449,6 +449,7 @@ static inline void powerpc_excp(PowerPCCPU *cpu, int excp_model, int excp)
             (BESCR_PME|!BESCR_PMEO|BESCR_GE)) { // XXX: Not sure about BESCR_PMEO here
             target_ulong nip;
             env->spr[SPR_BESCR] &= ~BESCR_GE;   // Clear GE
+            env->spr[SPR_BESCR] |= BESCR_PMEO;  // Set PMEO
             env->spr[SPR_EBBRR] = env->nip;     // Save NIP for rfebb insn
             nip = env->spr[SPR_EBBHR];          // EBB handler
             powerpc_set_excp_state(cpu, nip, env->msr);
