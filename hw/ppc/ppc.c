@@ -1139,9 +1139,8 @@ static void cpu_ppc_ictr_excp(PowerPCCPU *cpu)
     CPUPPCState *env = &cpu->env;
     // int64_t ctr;
     int64_t now;
-    // int cpu_id;
 
-    // ctr = env->ictr_env->ictr[ICTR_GENERIC]++;
+    // Generic counter
     env->ictr_env->ictr[ICTR_GENERIC]++;
 
     /* PMC logic */
@@ -1150,7 +1149,7 @@ static void cpu_ppc_ictr_excp(PowerPCCPU *cpu)
         env->spr[SPR_POWER_UPMC6]+=4; // 4 cycles per instruction.
     }
 
-
+/*
     // Raise exception to deliver an EBB only if SPR_EBBRR is
     // equal to magic number 0xbee.
     printf("ICTR timer triggered...\n");
@@ -1159,13 +1158,13 @@ static void cpu_ppc_ictr_excp(PowerPCCPU *cpu)
     printf("SPR_MMCR0 = %lx [%s]", env->spr[SPR_POWER_MMCR0], env->spr[SPR_POWER_MMCR0] & MMCR0_EBE ? "EBE" :  "");
     printf("SPR_UMMCR0 = %lx [%s]", env->spr[SPR_POWER_UMMCR0], env->spr[SPR_POWER_UMMCR0] & MMCR0_EBE ? "EBE" :  "");
     printf("MSR = %lx [%s]\n", env->msr, env->msr & (1<<14) ? "PR" : "  ");
-
+*/
 
     now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-    timer_mod(env->ictr_env->ictr_timer, now+1000000000ULL);
+    timer_mod(env->ictr_env->ictr_timer, now+512000000ULL);
 
     if (env->spr[SPR_POWER_MMCR0] & MMCR0_EBE) {
-        printf("PMU: raise event-based branch exception\n");
+//      printf("PMU: raise event-based branch exception\n");
         ppc_set_irq(cpu, PPC_INTERRUPT_PMC, 1);
     }
 }
