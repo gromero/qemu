@@ -1139,8 +1139,9 @@ static void cpu_ppc_ictr_excp(PowerPCCPU *cpu)
     CPUPPCState *env = &cpu->env;
     // int64_t ctr;
     int64_t now;
+    uint64_t mmcr0;
 
-    // Generic counter
+    // Generic counter, not used atm
     env->ictr_env->ictr[ICTR_GENERIC]++;
 
     /* PMC logic */
@@ -1161,10 +1162,24 @@ static void cpu_ppc_ictr_excp(PowerPCCPU *cpu)
 */
 
     now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-    timer_mod(env->ictr_env->ictr_timer, now+512000000ULL);
+    timer_mod(env->ictr_env->ictr_timer, now+1000000000ULL);
 
+    mmcr0 = env->spr[SPR_POWER_MMCR0];
     if (env->spr[SPR_POWER_MMCR0] & MMCR0_EBE) {
-//      printf("PMU: raise event-based branch exception\n");
+        // Adjust PMU logic before propagating the trigger
+        if (mmcr0 & MMCR0_FCECE) {
+//          printf("MMCR0 FCECE is enabled, clearing FCECE + setting FC...\n");
+            mmcr0 &= ~MMCR0_FCECE;
+            mmcr0 |= MMCR0_FC;
+        }
+        if (mmcr0 & MMCR0_PMAE) {
+//          printf("MMCR0 PMAE is enabled, clearing PMAE + setting PMAO...\n");
+            mmcr0 &= ~MMCR0_PMAE;
+            mmcr0 |= MMCR0_PMAO;
+        }
+        env->spr[SPR_POWER_MMCR0] = mmcr0;
+
+        printf("PMU: Raise event-based branch exception.\n");
         ppc_set_irq(cpu, PPC_INTERRUPT_PMC, 1);
     }
 }

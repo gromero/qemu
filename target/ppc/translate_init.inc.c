@@ -172,10 +172,51 @@ static void spr_read_ureg(DisasContext *ctx, int gprn, int sprn)
     gen_load_spr(cpu_gpr[gprn], sprn + 0x10);
 }
 
+/* User special read access to SPR */
+/* MMCR0 */
+static void spr_read_ureg_special(DisasContext *ctx, int gprn, int sprn)
+{
+    TCGv t0 = tcg_temp_new();
+    int effective_sprn = sprn + 0x10;
+
+    switch (effective_sprn) {
+        case (SPR_POWER_MMCR0):
+            // Filter out all bits but FC, PMAO, and PMAE, accordingly to ISA v3.1,
+            // in 10.4.4 Monitor Mode Control Register 0, fourth paragraph.
+            gen_load_spr(t0, effective_sprn);
+            tcg_gen_andi_tl(t0, t0, MMCR0_FC | MMCR0_PMAO | MMCR0_PMAE);
+            tcg_gen_mov_tl(cpu_gpr[gprn], t0);
+        break;
+        default:
+            printf("spr_read_ureg_special: SPR %d is unknown!\n", sprn);
+        break;
+    }
+}
+
 #if defined(TARGET_PPC64) && !defined(CONFIG_USER_ONLY)
 static void spr_write_ureg(DisasContext *ctx, int sprn, int gprn)
 {
     gen_store_spr(sprn + 0x10, cpu_gpr[gprn]);
+}
+
+/* User special write access to SPR  */
+/* MMCR0 */
+static void spr_write_ureg_special(DisasContext *ctx, int sprn, int gprn)
+{
+    TCGv t0 = tcg_temp_new();
+    int effective_sprn = sprn + 0x10;
+
+    switch (effective_sprn) {
+        case (SPR_POWER_MMCR0):
+            // Filter out all bits but FC, PMAO, and PMAE, accordingly to ISA v3.1,
+            // in 10.4.4 Monitor Mode Control Register 0, fourth paragraph.
+            tcg_gen_andi_tl(t0, cpu_gpr[gprn], MMCR0_FC | MMCR0_PMAO | MMCR0_PMAE);
+            gen_store_spr(effective_sprn, t0);
+        break;
+        default:
+            printf("spr_write_ureg_special: SPR %d is unknown!\n", sprn);
+        break;
+    }
 }
 #endif
 
@@ -7774,7 +7815,7 @@ static void gen_spr_book3s_pmu_sup(CPUPPCState *env)
 static void gen_spr_book3s_pmu_user(CPUPPCState *env)
 {
     spr_register(env, SPR_POWER_UMMCR0, "UMMCR0",
-                 &spr_read_ureg, &spr_write_ureg,
+                 &spr_read_ureg_special, &spr_write_ureg_special,
                  &spr_read_ureg, &spr_write_ureg,
                  0x00000000);
     spr_register(env, SPR_POWER_UMMCR1, "UMMCR1",
