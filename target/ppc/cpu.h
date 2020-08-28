@@ -351,11 +351,12 @@ typedef struct ppc_v3_pate_t {
 #define BESCR_PMEO PPC_BIT(63) /* Performance Monitor Event-based Exception Occurred */
 
 /* PMU */
-#define MMCR0_FC    PPC_BIT(32) /* Freeze Counters                               */
-#define MMCR0_PMAO  PPC_BIT(56) /* Performance monitor alert has occured         */
-#define MMCR0_PMAE  PPC_BIT(37) /* Performance monitor alert enable              */
-#define MMCR0_EBE   PPC_BIT(43) /* Performance monitor event-based branch enable */
-#define MMCR0_FCECE PPC_BIT(38) /* Freeze Counters on Enabled Condition or Event */
+#define MMCR0_FC    PPC_BIT(32)         /* Freeze Counters                               */
+#define MMCR0_PMAO  PPC_BIT(56)         /* Performance monitor alert has occured         */
+#define MMCR0_PMAE  PPC_BIT(37)         /* Performance monitor alert enable              */
+#define MMCR0_EBE   PPC_BIT(43)         /* Performance monitor event-based branch enable */
+#define MMCR0_FCECE PPC_BIT(38)         /* Freeze Counters on Enabled Condition or Event */
+#define MMCR0_PMCC  PPC_BITMASK(44, 45) /* PMC Control                                   */
 
 /* LPCR bits */
 #define LPCR_VPM0         PPC_BIT(0)

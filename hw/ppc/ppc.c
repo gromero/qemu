@@ -1161,6 +1161,7 @@ static void cpu_ppc_ictr_excp(PowerPCCPU *cpu)
     printf("MSR = %lx [%s]\n", env->msr, env->msr & (1<<14) ? "PR" : "  ");
 */
 
+    // Timer -> 0.1 seconds
     now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
     timer_mod(env->ictr_env->ictr_timer, now+1000000000ULL);
 
@@ -1179,7 +1180,7 @@ static void cpu_ppc_ictr_excp(PowerPCCPU *cpu)
         }
         env->spr[SPR_POWER_MMCR0] = mmcr0;
 
-        printf("PMU: Raise event-based branch exception.\n");
+        // printf("PMU: Raise event-based branch exception.\n");
         ppc_set_irq(cpu, PPC_INTERRUPT_PMC, 1);
     }
 }

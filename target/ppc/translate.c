@@ -184,6 +184,7 @@ struct DisasContext {
     bool scv_enabled;
     bool gtse;
     ppc_spr_t *spr_cb; /* Needed to check rights for mfspr/mtspr */
+    target_ulong *spr; /* Needed to check rights for mfspr/mtspr */
     int singlestep_enabled;
     uint32_t flags;
     uint64_t insns_flags;
@@ -7875,6 +7876,7 @@ static void ppc_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cs)
 
     ctx->exception = POWERPC_EXCP_NONE;
     ctx->spr_cb = env->spr_cb;
+    ctx->spr = env->spr;
     ctx->pr = msr_pr;
     ctx->mem_idx = env->dmmu_idx;
     ctx->dr = msr_dr;

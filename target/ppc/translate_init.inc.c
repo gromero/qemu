@@ -180,17 +180,21 @@ static void spr_read_ureg_special(DisasContext *ctx, int gprn, int sprn)
     int effective_sprn = sprn + 0x10;
 
     switch (effective_sprn) {
-        case (SPR_POWER_MMCR0):
+        case SPR_POWER_MMCR0:
             // Filter out all bits but FC, PMAO, and PMAE, accordingly to ISA v3.1,
             // in 10.4.4 Monitor Mode Control Register 0, fourth paragraph.
+            // printf("----> mfspr MMCR0_PMCC = %llx\n", ctx->spr[SPR_POWER_MMCR0] & MMCR0_PMCC);
             gen_load_spr(t0, effective_sprn);
             tcg_gen_andi_tl(t0, t0, MMCR0_FC | MMCR0_PMAO | MMCR0_PMAE);
             tcg_gen_mov_tl(cpu_gpr[gprn], t0);
         break;
         default:
-            printf("spr_read_ureg_special: SPR %d is unknown!\n", sprn);
+            // printf("spr_read_ureg_special: SPR %d is unknown!\n", sprn);
+            gen_load_spr(cpu_gpr[gprn], effective_sprn);
         break;
     }
+
+    tcg_temp_free(t0);
 }
 
 #if defined(TARGET_PPC64) && !defined(CONFIG_USER_ONLY)
@@ -201,22 +205,42 @@ static void spr_write_ureg(DisasContext *ctx, int sprn, int gprn)
 
 /* User special write access to SPR  */
 /* MMCR0 */
+/* PMC1 */
 static void spr_write_ureg_special(DisasContext *ctx, int sprn, int gprn)
 {
     TCGv t0 = tcg_temp_new();
+    TCGv t1 = tcg_temp_new();
     int effective_sprn = sprn + 0x10;
 
-    switch (effective_sprn) {
-        case (SPR_POWER_MMCR0):
-            // Filter out all bits but FC, PMAO, and PMAE, accordingly to ISA v3.1,
-            // in 10.4.4 Monitor Mode Control Register 0, fourth paragraph.
-            tcg_gen_andi_tl(t0, cpu_gpr[gprn], MMCR0_FC | MMCR0_PMAO | MMCR0_PMAE);
-            gen_store_spr(effective_sprn, t0);
-        break;
-        default:
-            printf("spr_write_ureg_special: SPR %d is unknown!\n", sprn);
-        break;
+    if (((ctx->spr[SPR_POWER_MMCR0] & MMCR0_PMCC) >> 18) == 0) {
+        // Hypervisor Emulation Assistance interrupt
+        // printf("----> mtspr %d is not allowed from PR! PMCC=%ld PR=%d\n", sprn, (ctx->spr[SPR_POWER_MMCR0] >> 18) & 0x3, ctx->pr);
+        gen_hvpriv_exception(ctx, POWERPC_EXCP_INVAL_SPR);
+    } else {
+        switch (effective_sprn) {
+            case SPR_POWER_PMC1:
+                // printf("----> mtspr PMC1\n");
+                gen_store_spr(effective_sprn, cpu_gpr[gprn]);
+                break;
+            case SPR_POWER_MMCR0:
+                // Filter out all bits but FC, PMAO, and PMAE, accordingly to ISA v3.1,
+                // in 10.4.4 Monitor Mode Control Register 0, fourth paragraph.
+                // printf("----> mtspr MMCR0_PMCC = %llx\n", ctx->spr[SPR_POWER_MMCR0] & MMCR0_PMCC);
+                tcg_gen_andi_tl(t0, cpu_gpr[gprn], MMCR0_FC | MMCR0_PMAO | MMCR0_PMAE);
+                gen_load_spr(t1, SPR_POWER_MMCR0);
+                tcg_gen_andi_tl(t1, t1, ~(MMCR0_FC | MMCR0_PMAO | MMCR0_PMAE));
+                tcg_gen_or_tl(t1, t1, t0); // Keep all other bits intact
+                gen_store_spr(effective_sprn, t1);
+                break;
+            default:
+                // printf("spr_write_ureg_special: SPR %d is unknown!\n", sprn);
+                gen_store_spr(effective_sprn, cpu_gpr[gprn]);
+                break;
+        }
     }
+
+    tcg_temp_free(t0);
+    tcg_temp_free(t1);
 }
 #endif
 
@@ -7827,7 +7851,7 @@ static void gen_spr_book3s_pmu_user(CPUPPCState *env)
                  &spr_read_ureg, &spr_write_ureg,
                  0x00000000);
     spr_register(env, SPR_POWER_UPMC1, "UPMC1",
-                 &spr_read_ureg, &spr_write_ureg,
+                 &spr_read_ureg_special, &spr_write_ureg_special,
                  &spr_read_ureg, &spr_write_ureg,
                  0x00000000);
     spr_register(env, SPR_POWER_UPMC2, "UPMC2",
