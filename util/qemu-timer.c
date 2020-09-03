@@ -147,7 +147,7 @@ void qemu_clock_notify(QEMUClockType type)
 }
 
 /* Disabling the clock will wait for related timerlists to stop
- * executing qemu_run_timers.  Thus, this functions should not
+ * executing qemu_run_timers.  Thus, this function should not
  * be used from the callback of a timer that is based on @clock.
  * Doing so would cause a deadlock.
  *
