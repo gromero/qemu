@@ -183,7 +183,7 @@ static int64_t cpu_get_icount_executed(CPUState *cpu)
 }
 
 /*
- * Update the global shared timer_state.qemu_icount to take into
+ * Update the global shared timers_state.qemu_icount to take into
  * account executed instructions. This is done by the TCG vCPU
  * thread so the main-loop can see time has moved forward.
  */
@@ -197,7 +197,7 @@ static void cpu_update_icount_locked(CPUState *cpu)
 }
 
 /*
- * Update the global shared timer_state.qemu_icount to take into
+ * Update the global shared timers_state.qemu_icount to take into
  * account executed instructions. This is done by the TCG vCPU
  * thread so the main-loop can see time has moved forward.
  */
