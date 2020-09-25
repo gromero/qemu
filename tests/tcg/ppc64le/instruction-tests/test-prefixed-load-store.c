@@ -19,17 +19,21 @@ bool debug = false;
 bool le;
 
 #define PSTB(_RS, _RA, _d0, _d1, _R) \
-    ".long 1<<26 | 2<<24 | (" #_R ")<<20 | (" #_d0 ")\n" \
-    ".long 38<<26 | (" #_RS ")<<21 | (" #_RA ")<<16 | (" #_d1 ")\n"
+    ".align 6;" \
+    ".long 1 << 26 | 2 << 24 | (" #_R ") << 20 | (" #_d0 ");" \
+    ".long 38 << 26 | (" #_RS ") << 21 | (" #_RA ") << 16 | (" #_d1 ");"
 #define PSTH(_RS, _RA, _d0, _d1, _R) \
-    ".long 1<<26 | 2<<24 | (" #_R ")<<20 | (" #_d0 ")\n" \
-    ".long 44<<26 | (" #_RS ")<<21 | (" #_RA ")<<16 | (" #_d1 ")\n"
+    ".align 6;" \
+    ".long 1 << 26 | 2 << 24 | (" #_R ") << 20 | (" #_d0 ");" \
+    ".long 44 << 26 | (" #_RS ") << 21 | (" #_RA ") << 16 | (" #_d1 ");"
 #define PSTW(_RS, _RA, _d0, _d1, _R) \
-    ".long 1<<26 | 2<<24 | (" #_R ")<<20 | (" #_d0 ")\n" \
-    ".long 36<<26 | (" #_RS ")<<21 | (" #_RA ")<<16 | (" #_d1 ")\n"
+    ".align 6;" \
+    ".long 1 << 26 | 2 << 24 | (" #_R ") << 20 | (" #_d0 ");" \
+    ".long 36 << 26 | (" #_RS ") << 21 | (" #_RA ") << 16 | (" #_d1 ");"
 #define PSTD(_RS, _RA, _d0, _d1, _R) \
-    ".long 1<<26 | (" #_R ")<<20 | (" #_d0 ")\n" \
-    ".long 61<<26 | (" #_RS ")<<21 | (" #_RA ")<<16 | (" #_d1 ")\n"
+    ".align 6;" \
+    ".long 1 << 26 | (" #_R ") << 20 | (" #_d0 ");" \
+    ".long 61 << 26 | (" #_RS ") << 21 | (" #_RA ") << 16 | (" #_d1 ");"
 
 #define PST_CALL(op, src, dest_ptr, offset_upper18, offset_lower16, r) \
     do {                                                               \
@@ -203,21 +207,27 @@ void test_pstd(void) {
 }
 
 #define PLBZ(_RT, _RA, _d0, _d1, _R) \
+    ".align 6;" \
     ".long 1<<26 | 2<<24 | (" #_R ")<<20 | (" #_d0 ")\n" \
     ".long 34<<26 | (" #_RT ")<<21 | (" #_RA ")<<16 | (" #_d1 ")\n"
 #define PLHZ(_RT, _RA, _d0, _d1, _R) \
+    ".align 6;" \
     ".long 1<<26 | 2<<24 | (" #_R ")<<20 | (" #_d0 ")\n" \
     ".long 40<<26 | (" #_RT ")<<21 | (" #_RA ")<<16 | (" #_d1 ")\n"
 #define PLHA(_RT, _RA, _d0, _d1, _R) \
+    ".align 6;" \
     ".long 1<<26 | 2<<24 | (" #_R ")<<20 | (" #_d0 ")\n" \
     ".long 42<<26 | (" #_RT ")<<21 | (" #_RA ")<<16 | (" #_d1 ")\n"
 #define PLWZ(_RT, _RA, _d0, _d1, _R) \
+    ".align 6;" \
     ".long 1<<26 | 2<<24 | (" #_R ")<<20 | (" #_d0 ")\n" \
     ".long 32<<26 | (" #_RT ")<<21 | (" #_RA ")<<16 | (" #_d1 ")\n"
 #define PLWA(_RT, _RA, _d0, _d1, _R) \
+    ".align 6;" \
     ".long 1<<26 | (" #_R ")<<20 | (" #_d0 ")\n" \
     ".long 41<<26 | (" #_RT ")<<21 | (" #_RA ")<<16 | (" #_d1 ")\n"
 #define PLD(_RT, _RA, _d0, _d1, _R) \
+    ".align 6;" \
     ".long 1<<26 | (" #_R ")<<20 | (" #_d0 ")\n" \
     ".long 57<<26 | (" #_RT ")<<21 | (" #_RA ")<<16 | (" #_d1 ")\n"
 
@@ -772,7 +782,7 @@ void test_plbz_cia(void) {
     uint64_t dest = 0;
 
     asm(
-        PLBZ(%0, 0, 0, 8, 1)
+        PLBZ(%0, 0, 0, 8 /* skip plbz */ + 4 /* skip b */, 1)
         "b 1f\n"
         ".byte 0x1a\n"
         ".byte 0x1b\n"
@@ -788,7 +798,7 @@ void test_plhz_cia(void) {
     uint64_t dest = 0;
 
     asm(
-        PLHZ(%0, 0, 0, 8, 1)
+        PLHZ(%0, 0, 0, 8 /* skip plhz */ + 4 /* skip b */, 1)
         "b 1f\n"
         ".byte 0x1a\n"
         ".byte 0x1b\n"
@@ -808,7 +818,7 @@ void test_plha_cia(void) {
     uint64_t dest = 0;
 
     asm(
-        PLHA(%0, 0, 0, 8, 1)
+        PLHA(%0, 0, 0, 8 /* skip plha */ + 4 /* skip b */, 1)
         "b 1f\n"
         ".byte 0x8a\n"
         ".byte 0x8b\n"
@@ -832,7 +842,7 @@ void test_plwz_cia(void) {
     uint64_t dest = 0;
 
     asm(
-        PLWZ(%0, 0, 0, 8, 1)
+        PLWZ(%0, 0, 0, 8 /* skip plwz */ + 4 /* skip b */, 1)
         "b 1f\n"
         ".byte 0x1a\n"
         ".byte 0x1b\n"
@@ -852,7 +862,7 @@ void test_plwa_cia(void) {
     uint64_t dest = 0;
 
     asm(
-        PLWA(%0, 0, 0, 8, 1)
+        PLWA(%0, 0, 0, 8 /* skip plwa */ + 4 /* skip b */, 1)
         "b 1f\n"
         ".byte 0x8a\n"
         ".byte 0x1b\n"
@@ -876,7 +886,7 @@ void test_pld_cia(void) {
     uint64_t dest = 0;
 
     asm(
-        PLD(%0, 0, 0, 8, 1)
+        PLD(%0, 0, 0, 8 /* skip pld */ + 4 /* skip b */, 1)
         "b 1f\n"
         ".byte 0x1a\n"
         ".byte 0x1b\n"
@@ -898,7 +908,7 @@ void test_pld_cia(void) {
 
 #define do_test(testname) \
     if (debug) \
-        fprintf(stderr, "          -> running test: " #testname "\n"); \
+        fprintf(stderr, "-> running test: " #testname "\n"); \
     test_##testname(); \
 
 int main(int argc, char **argv)
@@ -930,5 +940,6 @@ int main(int argc, char **argv)
     do_test(plwa_cia);
     do_test(pld_cia);
 
+    dprintf("All tests passed\n");
     return 0;
 }
