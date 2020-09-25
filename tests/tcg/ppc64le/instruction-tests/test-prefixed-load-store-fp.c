@@ -244,7 +244,7 @@ void test_pstfd_offset(void) {
 
 #define do_test(testname) \
     if (debug) \
-        fprintf(stderr, "          -> running test: " #testname "\n"); \
+        fprintf(stderr, "-> running test: " #testname "\n"); \
     test_##testname(); \
 
 int main(int argc, char **argv)
@@ -265,5 +265,6 @@ int main(int argc, char **argv)
     do_test(plfd_offset);
     do_test(pstfd_offset);
 
+    dprintf("All tests passed\n");
     return 0;
 }
