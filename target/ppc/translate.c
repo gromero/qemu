@@ -2505,7 +2505,10 @@ static inline int gen_addr_imm34_index(DisasContext *ctx, TCGv EA)
             gen_exception(ctx, POWERPC_EXCP_INVAL_INVAL);
             return 1;
         }
-        tcg_gen_movi_tl(EA, ctx->base.pc_next - 4);
+        // To find out the address of a prefixed instruction
+        // it's necessary to rewind 8 bytes because they are
+        // twice the size of non-prefixed instructions.
+        tcg_gen_movi_tl(EA, ctx->base.pc_next - 8);
     } else {
         gen_addr_register(ctx, EA);
     }
