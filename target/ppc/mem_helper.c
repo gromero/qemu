@@ -544,14 +544,14 @@ void helper_load_paired_vec(CPUPPCState *env, target_ulong addr,
 
     if (msr_le) {
         for (i = 0; i < 16; i++) {
-            t1.VsrB(i) = cpu_ldub_data_ra(env, addr, GETPC());
+            t1.VsrB(15 - i) = cpu_ldub_data_ra(env, addr, GETPC());
             addr = addr_add(env, addr, 1);
         }
         for (i = 0; i < 16; i++) {
-            t0.VsrB(i) = cpu_ldub_data_ra(env, addr, GETPC());
+            t0.VsrB(15 - i) = cpu_ldub_data_ra(env, addr, GETPC());
             addr = addr_add(env, addr, 1);
         }
-    } else {
+    } else { // TODO: check if it's correct fo BE
         for (i = 0; i < 16; i++) {
             t0.VsrB(i) = cpu_ldub_data_ra(env, addr, GETPC());
             addr = addr_add(env, addr, 1);
