@@ -551,7 +551,7 @@ void helper_load_paired_vec(CPUPPCState *env, target_ulong addr,
             t0.VsrB(15 - i) = cpu_ldub_data_ra(env, addr, GETPC());
             addr = addr_add(env, addr, 1);
         }
-    } else { // TODO: check if it's correct fo BE
+    } else { // TODO: check if it's correct for BE.
         for (i = 0; i < 16; i++) {
             t0.VsrB(i) = cpu_ldub_data_ra(env, addr, GETPC());
             addr = addr_add(env, addr, 1);
@@ -573,14 +573,14 @@ void helper_store_paired_vec(CPUPPCState *env, target_ulong addr,
 
     if (msr_le) {
         for (i = 0; i < 16; i++) {
-            cpu_stb_data_ra(env, addr, xt1->VsrB(i), GETPC());
+            cpu_stb_data_ra(env, addr, xt1->VsrB(15 - i), GETPC());
             addr = addr_add(env, addr, 1);
         }
         for (i = 0; i < 16; i++) {
-            cpu_stb_data_ra(env, addr, xt0->VsrB(i), GETPC());
+            cpu_stb_data_ra(env, addr, xt0->VsrB(15 - i), GETPC());
             addr = addr_add(env, addr, 1);
         }
-    } else {
+    } else { // TODO: check if it's correct for BE.
         for (i = 0; i < 16; i++) {
             cpu_stb_data_ra(env, addr, xt0->VsrB(i), GETPC());
             addr = addr_add(env, addr, 1);
