@@ -1,0 +1,32 @@
+# -*- Mode: makefile -*-
+#
+# PPC - included from tests/tcg/Makefile
+#
+
+# On PPC64 Linux can be configured with 4k (default) or 64k pages (currently broken)
+EXTRA_RUNS+=run-test-mmap-4096 #run-test-mmap-65536
+
+VPATH += $(SRC_PATH)/tests/tcg/$(TARGET_NAME)/instruction-tests
+QEMU_OPTS += -cpu power10
+
+PPC_TESTS = test-prefixed-load-store
+# PPC_TESTS += test-prefixed-load-store-fp
+# PPC_VSX_TESTS = test-paired-load-store-vsx test-matrix-multiply-assist-vsx
+
+VSX_CFLAGS = -maltivec -mvsx
+$(PPC_VSX_TESTS): CFLAGS+=$(VSX_CFLAGS)
+PPC_TESTS += $(PPC_VSX_TESTS)
+
+TESTS += $(PPC_TESTS)
+
+test-prefixed-load-store: test-prefixed-load-store.c
+	gcc $< -o test-prefixed-load-store
+
+test-prefixed-load-store-fp: test-prefixed-load-store-fp.c
+	gcc $< -o test-prefixed-load-store-fp
+
+test-paired-load-store-vsx: test-paired-load-store-vsx.c
+	gcc $< -o test-paired-load-store-vsx
+
+test-matrix-multiply-assist-vsx: test-matrix-multiply-assist-vsx.c
+	gcc $< -o test-matrix-multiply-assist-vsx

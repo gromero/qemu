@@ -54,6 +54,7 @@ build-tcg-tests-%: $(if $(CONFIG_PLUGIN),test-plugins)
 	$(call quiet-command,$(MAKE) $(SUBDIR_MAKEFLAGS) \
 		-f $(SRC_PATH)/tests/tcg/Makefile.qemu \
 		SRC_PATH=$(SRC_PATH) \
+		BUILD_DIR=$(BUILD_DIR) \
 	       	V="$(V)" TARGET="$*" guest-tests, \
 		"BUILD", "TCG tests for $*")
 
@@ -61,6 +62,7 @@ run-tcg-tests-%: build-tcg-tests-% all
 	$(call quiet-command,$(MAKE) $(SUBDIR_MAKEFLAGS) \
 		-f $(SRC_PATH)/tests/tcg/Makefile.qemu \
 		SRC_PATH=$(SRC_PATH) SPEED="$(SPEED)" \
+		BUILD_DIR=$(BUILD_DIR) \
 		V="$(V)" TARGET="$*" run-guest-tests, \
 		"RUN", "TCG tests for $*")
 
@@ -68,6 +70,7 @@ clean-tcg-tests-%:
 	$(call quiet-command,$(MAKE) $(SUBDIR_MAKEFLAGS) \
 		-f $(SRC_PATH)/tests/tcg/Makefile.qemu \
 		SRC_PATH=$(SRC_PATH) TARGET="$*" clean-guest-tests, \
+		BUILD_DIR=$(BUILD_DIR) \
 		"CLEAN", "TCG tests for $*")
 
 .PHONY: build-tcg
