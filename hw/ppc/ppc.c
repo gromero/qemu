@@ -1134,22 +1134,52 @@ clk_setup_cb cpu_ppc_tb_init (CPUPPCState *env, uint32_t freq)
     return &cpu_ppc_set_tb_clk;
 }
 
+// XXX: Replace by PPC_BIT()
+#ifndef PPCBIT64
+#define  PPC_(msb0_bit) (63-msb0_bit)
+#endif
+
 static void cpu_ppc_ictr_excp(PowerPCCPU *cpu)
 {
     CPUPPCState *env = &cpu->env;
     // int64_t ctr;
     int64_t now;
     uint64_t mmcr0;
+    uint32_t event;
 
     // Generic counter, not used atm
     env->ictr_env->ictr[ICTR_GENERIC]++;
 
     /* PMC logic */
     if ((env->spr[SPR_POWER_MMCR0] & MMCR0_FC) == 0) {
+
+        // PMC5 -> count completed instructions
+        // PMC6 -> count cycles per instruction. XXX: fixed 4 cycles
         env->spr[SPR_POWER_UPMC5]++;  // Count instruction.
         env->spr[SPR_POWER_UPMC6]+=4; // 4 cycles per instruction.
-    }
 
+        /*
+         * Extract event. N.B. currently it's assuming it only affects PMC1,
+         * only the PMC1 Selector field is inspected below. TODO: It's necessary
+         * to inspect PMC2, 3, etc Selector fields too.
+         */
+
+        // Extract event to be counted from PMC1 Selector
+        event = (env->spr[SPR_POWER_MMCR1] >> PPC_(39)) &
+                 ((unsigned long long)(1 << PPC_(32)) - 1);
+
+        if (event) {
+            switch (event) {
+            // PMC1 -> PM_CYC (cycles)
+            case 0x1E:
+                printf("PMC1: PM_CYC inc\n");
+                env->spr[SPR_POWER_PMC1]=0x80000000ULL;
+            break;
+            default:
+                printf("PMC1: unknown seletected event %x!\n", event);
+            }
+        }
+    }
 /*
     // Raise exception to deliver an EBB only if SPR_EBBRR is
     // equal to magic number 0xbee.
