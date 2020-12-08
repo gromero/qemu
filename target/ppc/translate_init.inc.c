@@ -181,11 +181,28 @@ static void spr_read_ureg_special(DisasContext *ctx, int gprn, int sprn)
 
     switch (effective_sprn) {
         case SPR_POWER_MMCR0:
-            // Filter out all bits but FC, PMAO, and PMAE, accordingly to ISA v3.1,
-            // in 10.4.4 Monitor Mode Control Register 0, fourth paragraph.
+            /*
+             * Filter out all bits but FC, PMAO, and PMAE, accordingly to
+             * ISA v3.1, section 10.4.4 Monitor Mode Control Register 0,
+             * fourth para.
+             */
             // printf("----> mfspr MMCR0_PMCC = %llx\n", ctx->spr[SPR_POWER_MMCR0] & MMCR0_PMCC);
             gen_load_spr(t0, effective_sprn);
             tcg_gen_andi_tl(t0, t0, MMCR0_FC | MMCR0_PMAO | MMCR0_PMAE);
+            tcg_gen_mov_tl(cpu_gpr[gprn], t0);
+        break;
+        case SPR_POWER_MMCR2:
+            /* On read, filter out all bits that are not FCnP0 bits. When
+             * MMCR0[PMCC] is set to 0b10 or 0b11, providing problem state
+             * programs read/write access to MMCR2, only the FCnP0 bits can be
+             * accessed. All other bits are not changed when mtspr is executed
+             * in problem state, and all other bits return 0s when mfspr is
+             * executed in problem state, accordingly to ISA v3.1, section
+             * 10.4.6 Monitor Mode Control Register 2, p. 1316, third para.
+             */
+            // printf("----> mfspr MMCR2\n");
+            gen_load_spr(t0, effective_sprn);
+            tcg_gen_andi_tl(t0, t0, 0x4020100804020000UL);
             tcg_gen_mov_tl(cpu_gpr[gprn], t0);
         break;
         default:
@@ -7947,8 +7964,8 @@ static void gen_spr_power8_pmu_sup(CPUPPCState *env)
 static void gen_spr_power8_pmu_user(CPUPPCState *env)
 {
     spr_register(env, SPR_POWER_UMMCR2, "UMMCR2",
-                 &spr_read_ureg, &spr_write_ureg,
-                 &spr_read_ureg, &spr_write_ureg,
+                 &spr_read_ureg_special, &spr_write_ureg,
+                 &spr_read_ureg_special, &spr_write_ureg,
                  0x00000000);
     spr_register(env, SPR_POWER_USIER, "USIER",
                  &spr_read_generic, SPR_NOACCESS,
