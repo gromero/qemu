@@ -1145,7 +1145,8 @@ static void cpu_ppc_ictr_excp(PowerPCCPU *cpu)
     // int64_t ctr;
     int64_t now;
     uint64_t mmcr0;
-    uint32_t event;
+    uint32_t pmc1_event;
+    uint32_t pmc4_event;
 
     // Generic counter, not used atm
     env->ictr_env->ictr[ICTR_GENERIC]++;
@@ -1165,20 +1166,38 @@ static void cpu_ppc_ictr_excp(PowerPCCPU *cpu)
          */
 
         // Extract event to be counted from PMC1 Selector
-        event = (env->spr[SPR_POWER_MMCR1] >> PPC_(39)) &
+        pmc1_event = (env->spr[SPR_POWER_MMCR1] >> PPC_(39)) &
                  ((unsigned long long)(1 << PPC_(32)) - 1);
 
-        if (event) {
-            switch (event) {
+        // Extract event to be counted from PMC4 Selector
+        pmc4_event = (env->spr[SPR_POWER_MMCR1] >> PPC_(63)) &
+                 ((unsigned long long)(1 << PPC_(56)) - 1);
+
+        if (pmc1_event) {
+            switch (pmc1_event) {
             // PMC1 -> PM_CYC (cycles)
             case 0x1E:
-                printf("PMC1: PM_CYC inc\n");
+                // printf("PMC1: PM_CYC inc\n");
+                // fake counter overflow
                 env->spr[SPR_POWER_PMC1]=0x80000000ULL;
             break;
             default:
-                printf("PMC1: unknown seletected event %x!\n", event);
+                printf("PMC1: unknown selected event %x!\n", pmc1_event);
             }
         }
+
+       if (pmc4_event) {
+           switch (pmc4_event) {
+           // PMC4 -> PM_INST_CMPL (number of completed instructions)
+           case 0x02:
+               // printf("PMC4: PM_INST_CMPL inc\n");
+               // fake counter overflow
+               env->spr[SPR_POWER_PMC4]=0x80000000ULL;
+           break;
+           default:
+               printf("PMC4: unknown selected event %x!\n", pmc4_event);
+           }
+       }
     }
 /*
     // Raise exception to deliver an EBB only if SPR_EBBRR is
