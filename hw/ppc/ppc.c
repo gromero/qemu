@@ -1194,6 +1194,12 @@ static void cpu_ppc_ictr_excp(PowerPCCPU *cpu)
                // fake counter overflow
                env->spr[SPR_POWER_PMC4]=0x80000000ULL;
            break;
+           // PMC4 -> PM_RUN_INST_CMPL (number of completed instructions gated by the run latch)
+           case 0xFA:
+               printf("PMC4: PM_RUN_INST_CMPL inc\n");
+               // fake counter overflow
+               env->spr[SPR_POWER_PMC4]=0x80000000ULL;
+           break;
            default:
                printf("PMC4: unknown selected event %x!\n", pmc4_event);
            }
@@ -1212,7 +1218,7 @@ static void cpu_ppc_ictr_excp(PowerPCCPU *cpu)
 
     // Timer -> 0.1 seconds
     now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-    timer_mod(env->ictr_env->ictr_timer, now+1000000000ULL);
+    timer_mod(env->ictr_env->ictr_timer, now+500000ULL);
 
     mmcr0 = env->spr[SPR_POWER_MMCR0];
     if (env->spr[SPR_POWER_MMCR0] & MMCR0_EBE) {
