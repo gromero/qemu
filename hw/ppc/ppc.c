@@ -1167,11 +1167,11 @@ static void cpu_ppc_ictr_excp(PowerPCCPU *cpu)
 
         // Extract event to be counted from PMC1 Selector
         pmc1_event = (env->spr[SPR_POWER_MMCR1] >> PPC_(39)) &
-                 ((unsigned long long)(1 << PPC_(32)) - 1);
+                 ((unsigned long long)(1ULL << (PPC_(32) + 1)) - 1);
 
         // Extract event to be counted from PMC4 Selector
         pmc4_event = (env->spr[SPR_POWER_MMCR1] >> PPC_(63)) &
-                 ((unsigned long long)(1 << PPC_(56)) - 1);
+                 ((unsigned long long)(1ULL << (PPC_(56) + 1)) - 1);
 
         if (pmc1_event) {
             switch (pmc1_event) {
