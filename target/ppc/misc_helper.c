@@ -30,14 +30,16 @@
 /* SPR accesses */
 void helper_load_dump_spr(CPUPPCState *env, uint32_t sprn)
 {
-    qemu_log("Read SPR %d %03x => " TARGET_FMT_lx "\n", sprn, sprn,
-             env->spr[sprn]);
+    if ( sprn == 774 || sprn == SPR_POWER_MMCR1 || sprn == SPR_POWER_UMMCR1)
+    qemu_log("Read SPR %d %03x => " TARGET_FMT_lx " nip: %lx \n", sprn, sprn,
+             env->spr[sprn], env->nip);
 }
 
 void helper_store_dump_spr(CPUPPCState *env, uint32_t sprn)
 {
-    qemu_log("Write SPR %d %03x <= " TARGET_FMT_lx "\n", sprn, sprn,
-             env->spr[sprn]);
+    if ( sprn == 774 || sprn == SPR_POWER_MMCR1 || sprn == SPR_POWER_UMMCR1)
+    qemu_log("Write SPR %d %03x <= " TARGET_FMT_lx " nip: %lx \n", sprn, sprn,
+             env->spr[sprn], env->nip);
 }
 
 #ifdef TARGET_PPC64

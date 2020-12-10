@@ -54,11 +54,11 @@
  */
 static void spr_load_dump_spr(int sprn)
 {
-#ifdef PPC_DUMP_SPR_ACCESSES
+// #ifdef PPC_DUMP_SPR_ACCESSES
     TCGv_i32 t0 = tcg_const_i32(sprn);
     gen_helper_load_dump_spr(cpu_env, t0);
     tcg_temp_free_i32(t0);
-#endif
+// #endif
 }
 
 static void spr_read_generic(DisasContext *ctx, int gprn, int sprn)
@@ -69,11 +69,11 @@ static void spr_read_generic(DisasContext *ctx, int gprn, int sprn)
 
 static void spr_store_dump_spr(int sprn)
 {
-#ifdef PPC_DUMP_SPR_ACCESSES
+// #ifdef PPC_DUMP_SPR_ACCESSES
     TCGv_i32 t0 = tcg_const_i32(sprn);
     gen_helper_store_dump_spr(cpu_env, t0);
     tcg_temp_free_i32(t0);
-#endif
+// #endif
 }
 
 static void spr_write_generic(DisasContext *ctx, int sprn, int gprn)
@@ -169,6 +169,7 @@ static void spr_write_ctr(DisasContext *ctx, int sprn, int gprn)
 /* UDECR */
 static void spr_read_ureg(DisasContext *ctx, int gprn, int sprn)
 {
+    spr_load_dump_spr(sprn);
     gen_load_spr(cpu_gpr[gprn], sprn + 0x10);
 }
 
@@ -217,6 +218,7 @@ static void spr_read_ureg_special(DisasContext *ctx, int gprn, int sprn)
 #if defined(TARGET_PPC64) && !defined(CONFIG_USER_ONLY)
 static void spr_write_ureg(DisasContext *ctx, int sprn, int gprn)
 {
+    spr_store_dump_spr(sprn);
     gen_store_spr(sprn + 0x10, cpu_gpr[gprn]);
 }
 
