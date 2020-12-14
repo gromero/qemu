@@ -681,6 +681,7 @@ int cpu_exec(CPUState *cpu)
     CPUClass *cc = CPU_GET_CLASS(cpu);
     int ret;
     SyncClocks sc = { 0 };
+    CPUPPCState *env = cpu->env_ptr;
 
     /* replay_interrupt may need current_cpu */
     current_cpu = cpu;
@@ -751,6 +752,11 @@ int cpu_exec(CPUState *cpu)
                if the guest is in advance */
             align_clocks(&sc, cpu);
         }
+
+    if (env->spr[SPR_POWER_PMC4] == 0xbee) {
+        printf("%ld\n", cpu_get_icount());
+    }
+
     }
 
     cc->cpu_exec_exit(cpu);
