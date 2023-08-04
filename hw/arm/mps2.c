@@ -474,6 +474,8 @@ static void mps2_class_init(ObjectClass *oc, void *data)
     mc->max_cpus = 1;
     mc->default_ram_size = 16 * MiB;
     mc->default_ram_id = "mps.ram";
+
+    machine_class_allow_dynamic_sysbus_dev(mc, "ivshmem-flat");
 }
 
 static void mps2_an385_class_init(ObjectClass *oc, void *data)
