@@ -1329,6 +1329,9 @@ static void lm3s6965evb_class_init(ObjectClass *oc, void *data)
     mc->init = lm3s6965evb_init;
     mc->ignore_memory_transaction_failures = true;
     mc->default_cpu_type = ARM_CPU_TYPE_NAME("cortex-m3");
+
+#define TYPE_IVSHMEM_NO_PCI "ivshmem-no-pci"
+    machine_class_allow_dynamic_sysbus_dev(mc, TYPE_IVSHMEM_NO_PCI);
 }
 
 static const TypeInfo lm3s6965evb_type = {

@@ -494,6 +494,7 @@ static const BindingEntry bindings[] = {
     TYPE_BINDING(TYPE_TPM_TIS_SYSBUS, add_tpm_tis_fdt_node),
 #endif
     TYPE_BINDING(TYPE_RAMFB_DEVICE, no_fdt_node),
+    TYPE_BINDING("ivshmem-no-pci", no_fdt_node),
     TYPE_BINDING("", NULL), /* last element */
 };
 

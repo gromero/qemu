@@ -17,6 +17,9 @@ config SPICE
 config IVSHMEM
     bool
 
+config IVSHMEM_NO_PCI_DEVICE
+    bool
+
 config TPM
     bool
 
