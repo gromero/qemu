@@ -2608,6 +2608,12 @@ SRST
     machine only).
 ERST
 
+DEF("ivshmem", 1, QEMU_OPTION_ivshmem, "-ivshmem enable Inter-VM shared memory device\n", QEMU_ARCH_ARM)
+SRST
+``-ivshmem``
+    Enable Inter-VM shared memory device.
+ERST
+
 DEF("no-hpet", 0, QEMU_OPTION_no_hpet,
     "-no-hpet        disable HPET\n", QEMU_ARCH_I386)
 SRST

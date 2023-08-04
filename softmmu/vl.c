@@ -3216,6 +3216,13 @@ void qemu_init(int argc, char **argv)
                 }
                 smbios_entry_add(opts, &error_fatal);
                 break;
+	    case QEMU_OPTION_ivshmem:
+		opts = qemu_opts_parse_noisily(qemu_find_opts("ivshmem"),
+                                               optarg, false);
+		if (!opts) {
+	            exit(1);
+		}
+		break;
             case QEMU_OPTION_fwcfg:
                 opts = qemu_opts_parse_noisily(qemu_find_opts("fw_cfg"),
                                                optarg, true);

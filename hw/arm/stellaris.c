@@ -8,6 +8,8 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/option.h"
+#include "qemu/config-file.h"
 #include "qapi/error.h"
 #include "hw/core/split-irq.h"
 #include "hw/sysbus.h"
@@ -26,6 +28,7 @@
 #include "hw/input/gamepad.h"
 #include "hw/irq.h"
 #include "hw/watchdog/cmsdk-apb-watchdog.h"
+#include "hw/misc/ivshmem-flat.h"
 #include "migration/vmstate.h"
 #include "hw/misc/unimp.h"
 #include "hw/timer/stellaris-gptm.h"
@@ -720,7 +723,7 @@ static void stellaris_adc_fifo_write(StellarisADCState *s, int n,
 {
     int head;
 
-    /* TODO: Real hardware has limited size FIFOs.  We have a full 16 entry 
+    /* TODO: Real hardware has limited size FIFOs.  We have a full 16 entry
        FIFO fir each sequencer.  */
     head = (s->fifo[n].state >> 4) & 0xf;
     if (s->fifo[n].state & STELLARIS_ADC_FIFO_FULL) {
@@ -1012,9 +1015,11 @@ static void stellaris_init(MachineState *ms, stellaris_board_info *board)
      * 400fc000 hibernation module (unimplemented)
      * 400fd000 flash memory control (unimplemented)
      * 400fe000 system control
+     * 400ff000 ivshmem mmr
+     * 40100000 ivshmem shmem
      */
 
-    DeviceState *gpio_dev[7], *nvic;
+    DeviceState *gpio_dev[7], *nvic, *ivshmem_flat;
     qemu_irq gpio_in[7][8];
     qemu_irq gpio_out[7][8];
     qemu_irq adc;
@@ -1078,6 +1083,29 @@ static void stellaris_init(MachineState *ms, stellaris_board_info *board)
     /* Now we can wire up the IRQ and MMIO of the system registers */
     sysbus_mmio_map(SYS_BUS_DEVICE(ssys_dev), 0, 0x400fe000);
     sysbus_connect_irq(SYS_BUS_DEVICE(ssys_dev), 0, qdev_get_gpio_in(nvic, 28));
+
+    /* IVSHMEM non-PCI device */
+    ivshmem_flat = qdev_new(TYPE_IVSHMEM_FLAT);
+
+    /*
+     * Wire up ivshmem dev output IRQ line to NVIC dev input line associated to
+     * external interrupt 16 (IRQ0).
+     */
+    if (sysbus_has_irq(SYS_BUS_DEVICE(ivshmem_flat), 0)) {
+     // printf("ivshmem_flat has IRQ 0 defined :-) Wiring it up to NVIC!\n");
+        sysbus_connect_irq(SYS_BUS_DEVICE(ivshmem_flat), 0, qdev_get_gpio_in(nvic, 0));
+    } else {
+     // printf("vishmem_flat has no IRQ 0 defined... :-(\n");
+    }
+
+    /*
+     * Realize ivshmem -- device's "realize" handler will be called, see
+     * hw/misc/ivshmem-flat.c for details on the handler.
+     */
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(ivshmem_flat), &error_fatal);
+
+    /* Map ivshmem IOMEM region */
+    sysbus_mmio_map(SYS_BUS_DEVICE(ivshmem_flat), 0, 0x400ff000);
 
     if (board->dc1 & (1 << 16)) {
         dev = sysbus_create_varargs(TYPE_STELLARIS_ADC, 0x40038000,
@@ -1344,6 +1372,12 @@ static void lm3s6965evb_class_init(ObjectClass *oc, void *data)
     mc->init = lm3s6965evb_init;
     mc->ignore_memory_transaction_failures = true;
     mc->default_cpu_type = ARM_CPU_TYPE_NAME("cortex-m3");
+/*
+ * Just necessary if the device is hotpluggable+user_creatable.
+ *
+#define TYPE_IVSHMEM_FLAT "ivshmem-flat"
+    machine_class_allow_dynamic_sysbus_dev(mc, TYPE_IVSHMEM_FLAT);
+*/
 }
 
 static const TypeInfo lm3s6965evb_type = {
