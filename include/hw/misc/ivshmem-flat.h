@@ -60,6 +60,7 @@ struct IvshmemFTState {
     /* Shared mem */
     int shmem_fd;
     uint32_t shmem_maxsize;
+    uint64_t shmem_addr;
     MemoryRegion shmem;
 };
 

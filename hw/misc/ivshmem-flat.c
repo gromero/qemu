@@ -299,9 +299,9 @@ Message sequence from server on new connection:
         if (fdstat.st_size > s->shmem_maxsize) {
             IVSHMEM_DPRINTF("Can't map shmem fd: requested size exceeds device max size!\n");
         } else {
-            IVSHMEM_DPRINTF("Mapping shmem fd at 0x40100000... ");
+            IVSHMEM_DPRINTF("Mapping shmem fd at %#lx... ", s->shmem_addr);
             memory_region_init_ram_from_fd(&s->shmem, OBJECT(s), "ivshmem-shmem", fdstat.st_size, RAM_SHARED, shmem_fd, 0, NULL);
-            memory_region_add_subregion(get_system_memory(), 0x40100000, &s->shmem);
+            memory_region_add_subregion(get_system_memory(), s->shmem_addr, &s->shmem);
             IVSHMEM_DPRINTF("done!\n");
         }
     }
@@ -449,6 +449,11 @@ static void ivshmem_flat_instance_init(Object *obj)
              IVSHMEM_DPRINTF("Setting SHMEM MAXSIZE to %ld\n", opt->value.uint);
              qdev_prop_set_uint32(dev, "shmem-maxsize", opt->value.uint);
          }
+
+         if ((opt = qemu_opt_find(opts, "shmem-addr"))) {
+             IVSHMEM_DPRINTF("Setting SHMEM ADDRESS to %#lx\n", opt->value.uint);
+             qdev_prop_set_uint64(dev, "shmem-addr", opt->value.uint);
+	 }
     }
 
     QTAILQ_INIT(&s->peer);
@@ -457,6 +462,7 @@ static void ivshmem_flat_instance_init(Object *obj)
 static Property ivshmem_flat_props[] = {
     DEFINE_PROP_CHR("chardev", IvshmemFTState, server_chr),
     DEFINE_PROP_UINT32("shmem-maxsize", IvshmemFTState, shmem_maxsize, 256),
+    DEFINE_PROP_UINT64("shmem-addr", IvshmemFTState, shmem_addr, 0x40100000),
     DEFINE_PROP_END_OF_LIST(),
 };
 
@@ -468,6 +474,10 @@ static QemuOptsList ivshmem_flat_opts = {
     .desc = {
         {
             .name = "shmem-maxsize",
+            .type = QEMU_OPT_SIZE,
+        },
+        {
+            .name = "shmem-addr",
             .type = QEMU_OPT_SIZE,
         },
         { /* end of list */ }
