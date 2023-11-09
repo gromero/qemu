@@ -66,6 +66,7 @@ config IVSHMEM_DEVICE
 config IVSHMEM_FLAT_DEVICE
     bool
     default y
+    depends on LINUX && IVSHMEM
 
 config ECCMEMCTL
     bool

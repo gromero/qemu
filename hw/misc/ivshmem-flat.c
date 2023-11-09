@@ -8,16 +8,9 @@
 #include "hw/sysbus.h"
 #include "chardev/char-fe.h"
 #include "exec/address-spaces.h"
+#include "trace.h"
 
 #include "hw/misc/ivshmem-flat.h"
-
-#define IVSHMEM_DEBUG 0
-#define IVSHMEM_DPRINTF(fmt, ...)                       \
-    do {                                                \
-        if (IVSHMEM_DEBUG) {                            \
-            printf("IVSHMEM: " fmt, ## __VA_ARGS__);    \
-        }                                               \
-    } while (0)
 
 static int64_t ivshmem_flat_recv_msg(IvshmemFTState *s, int *pfd)
 {
@@ -32,7 +25,7 @@ static int64_t ivshmem_flat_recv_msg(IvshmemFTState *s, int *pfd)
             if (ret == -EINTR) {
                 continue;
             }
-	    exit(1);
+            exit(1);
         }
         n += ret;
     } while (n < sizeof(msg));
@@ -70,11 +63,11 @@ static void ivshmem_flat_irq_handler(void *opaque)
         return;
     }
 
-    IVSHMEM_DPRINTF("Caught interrupt request: vector %d.\n", vector_id);
+    trace_ivshmem_flat_irq_handler(vector_id);
 
     /*
-     * Toggle device's output line, which is connected to IC, generating an
-     * interrupt request to the CPU.
+     * Toggle device's output line, which is connected to interrupt controller,
+     * generating an interrupt request to the CPU.
      */
     qemu_set_irq(s->irq, true);
     qemu_set_irq(s->irq, false);
@@ -93,7 +86,7 @@ IvshmemPeer *ivshmem_flat_find_peer(IvshmemFTState *s, uint16_t peer_id)
     QTAILQ_FOREACH(peer, &s->peer, next) {
         if (peer->id == peer_id) {
             return peer;
-	}
+        }
     }
 
     return NULL;
@@ -109,7 +102,7 @@ IvshmemPeer *ivshmem_flat_add_peer(IvshmemFTState *s, uint16_t peer_id)
 
     QTAILQ_INSERT_TAIL(&s->peer, new_peer, next);
 
-    IVSHMEM_DPRINTF("New peer: ID %d\n", peer_id);
+    trace_ivshmem_flat_new_peer(peer_id);
 
     return new_peer;
 }
@@ -134,15 +127,13 @@ static void ivshmem_flat_remove_peer(IvshmemFTState *s, uint16_t peer_id)
 static void ivshmem_flat_add_vector(IvshmemFTState *s, IvshmemPeer *peer, int vector_fd)
 {
     if (peer->vector_counter >= IVSHMEM_MAX_VECTOR_NUM) {
-        IVSHMEM_DPRINTF("Peer %d: failed to add vector %d (fd = %d), maximum number of vectors "
-			"exceeded!\n", peer->id, peer->vector_counter, vector_fd);
+        trace_ivshmem_flat_add_vector_failure(peer->vector_counter, vector_fd, peer->id);
         close(vector_fd);
 
-	return;
+        return;
     }
 
-    IVSHMEM_DPRINTF("Peer %d: adding vector %d (fd = %d)\n", peer->id, peer->vector_counter,
-                     vector_fd);
+    trace_ivshmem_flat_add_vector_success(peer->vector_counter, vector_fd, peer->id);
 
     /* Set vector ID and its associated eventfd notifier and add them to the peer. */
     peer->vector[peer->vector_counter].id = peer->vector_counter;
@@ -173,7 +164,7 @@ static void ivshmem_flat_process_msg(IvshmemFTState *s, uint64_t msg, int fd) {
 
     if (fd >= 0) {
         ivshmem_flat_add_vector(s, peer, fd);
-    } else { /* fd == -1, received when peers disconnect. */
+    } else { /* fd == -1, which is received when peers disconnect. */
         ivshmem_flat_remove_peer(s, peer_id);
     }
 }
@@ -208,7 +199,6 @@ static void ivshmem_flat_read_msg(void *opaque, const uint8_t *buf, int size)
 
 /*
  * Message sequence from server on new connection:
- *
  *  _____________________________________
  * |STEP| uint64_t msg  | int fd         |
  *  -------------------------------------
@@ -229,6 +219,8 @@ static void ivshmem_flat_read_msg(void *opaque, const uint8_t *buf, int size)
  *  .                    .
  *
  *  ivshmem_flat_recv_msg() calls return 'msg' and 'fd'.
+ *
+ *  See ./docs/specs/ivshmem-spec.txt for details on the protocol.
  */
 static void ivshmem_flat_realize(DeviceState *dev, Error **errp) {
     IvshmemFTState *s = IVSHMEM_FLAT(dev);
@@ -264,20 +256,20 @@ static void ivshmem_flat_realize(DeviceState *dev, Error **errp) {
             error_setg(errp, "Can't resolve IRQ QOM path.");
             return;
         } else {
-            IVSHMEM_DPRINTF("Resolved IRQ QOM path '%s'.\n", s->irq_qompath);
+            trace_ivshmem_flat_irq_resolved(s->irq_qompath);
         }
 
         /* Connect device out irq line to interrupt controller input irq line. */
         qdev_connect_gpio_out_named(dev, "irq-output", 0, (qemu_irq)(oirq));
 
         if (qemu_irq_is_connected((qemu_irq)(oirq))) {
-            IVSHMEM_DPRINTF("Connected device to interrupt controller IRQ input line.\n");
+            trace_ivshmem_flat_irq_connected();
         }
     } else {
-	/*
-	 * If input IRQ is not provided, warn user the device won't be able to trigger any
-	 * interrupts.
-	 */
+       /*
+        * If input IRQ is not provided, warn user the device won't be able to trigger any
+        * interrupts.
+        */
         warn_report("Input IRQ not specified, device won't be able to handle IRQs!");
     }
 
@@ -296,35 +288,32 @@ static void ivshmem_flat_realize(DeviceState *dev, Error **errp) {
     s->own.id = peer_id;
     s->own.vector_counter = 0;
 
-    IVSHMEM_DPRINTF("---------------------------------------------------------\n");
-    IVSHMEM_DPRINTF("Protocol Version = %lx, Own Peer ID = %d\n", protocol_version, s->own.id);
-    IVSHMEM_DPRINTF("---------------------------------------------------------\n");
+    trace_ivshmem_flat_proto_ver_own_id(protocol_version, s->own.id);
 
     /* Step 2 */
     msg = ivshmem_flat_recv_msg(s, &shmem_fd);
+    /* Map shmem fd and MMRs into memory regions. */
     if (msg == -1 && shmem_fd >= 0) {
-        /*
-	 * Map shmem fd and MMRs into memory regions.
-	 */
         struct stat fdstat;
 
         if (fstat(shmem_fd, &fdstat) != 0) {
             error_setg(errp, "Could not determine shmem fd size. Can't create device!");
-	    return;
+
+            return;
         }
-        IVSHMEM_DPRINTF("Shmem fd total size is %ld byte(s).\n", fdstat.st_size);
+        trace_ivshmem_flat_shmem_size(fdstat.st_size);
 
         /* Shmem size provided by the ivshmem server must be equal to device's shmem size. */
         if (fdstat.st_size != s->shmem_size) {
             error_setg(errp, "Can't map shmem fd: shmem size different from device size!");
             return;
         } else {
-            IVSHMEM_DPRINTF("Mapping shmem fd (%d) at %#lx.\n", shmem_fd, s->bus_address_shmem);
+            trace_ivshmem_flat_shmem_addr(shmem_fd, s->bus_address_shmem);
             memory_region_init_ram_from_fd(&s->shmem, OBJECT(s), "ivshmem-shmem", fdstat.st_size,
-			                   RAM_SHARED, shmem_fd, 0, NULL);
+                                           RAM_SHARED, shmem_fd, 0, NULL);
             memory_region_add_subregion(get_system_memory(), s->bus_address_shmem, &s->shmem);
 
-            IVSHMEM_DPRINTF("Mapping MMRs at %#lx.\n", s->bus_address_mmr);
+            trace_ivshmem_flat_mmr_addr(s->bus_address_mmr);
             sysbus_mmio_map(SYS_BUS_DEVICE(s), 0, s->bus_address_mmr);
         }
     }
@@ -343,27 +332,27 @@ static uint64_t ivshmem_flat_iomem_read(void *opaque, hwaddr offset, unsigned si
     IvshmemFTState *s = opaque;
     uint32_t ret;
 
-    IVSHMEM_DPRINTF("Read access from offset %ld.\n", offset);
+    trace_ivshmem_flat_read_mmr(offset);
 
     switch (offset)
     {
         case INTMASK:
             ret = 0; /* Ignore read since all bits are reserved in rev 1. */
-	    break;
-	case INTSTATUS:
-	    ret = 0; /* Ignore read since all bits are reserved in rev 1. */
-	    break;
+            break;
+        case INTSTATUS:
+            ret = 0; /* Ignore read since all bits are reserved in rev 1. */
+            break;
         case IVPOSITION:
-	    ret = s->own.id;
-	    break;
-	case DOORBELL:
-	    IVSHMEM_DPRINTF("DOORBELL register is write-only!\n");
+            ret = s->own.id;
+            break;
+        case DOORBELL:
+            trace_ivshmem_flat_read_mmr_doorbell(); /* DOORBELL is write-only */
             ret = 0;
             break;
-	default:
-	    /* Should never reach out here due to iomem map range being exact. */
-	    IVSHMEM_DPRINTF("No ivshmem register mapped at offset %ld\n!", offset);
-	    ret = 0;
+        default:
+            /* Should never reach out here due to iomem map range being exact. */
+            trace_ivshmem_flat_read_write_mmr_invalid(offset);
+            ret = 0;
     }
 
     return ret;
@@ -375,7 +364,7 @@ static int ivshmem_flat_interrupt_peer(IvshmemFTState *s, uint16_t peer_id, uint
 
     peer = ivshmem_flat_find_peer(s, peer_id);
     if (!peer) {
-        IVSHMEM_DPRINTF("Can't interrupt non-existing peer %d.\n", peer_id);
+        trace_ivshmem_flat_interrupt_invalid_peer(peer_id);
         return 1;
     }
 
@@ -390,7 +379,7 @@ static void ivshmem_flat_iomem_write(void *opaque, hwaddr offset, uint64_t value
     uint16_t vector_id = value >> 16;
     uint16_t peer_id = value & 0xFFFF;
 
-    IVSHMEM_DPRINTF("Write access to offset %ld.\n", offset);
+    trace_ivshmem_flat_write_mmr(offset);
 
     switch (offset) {
     case INTMASK:
@@ -400,14 +389,12 @@ static void ivshmem_flat_iomem_write(void *opaque, hwaddr offset, uint64_t value
     case IVPOSITION:
         break;
     case DOORBELL:
-        IVSHMEM_DPRINTF("Interrupting peer ID %d, vector %d... \n", peer_id, vector_id);
-        if (ivshmem_flat_interrupt_peer(s, peer_id, vector_id)) {
-            IVSHMEM_DPRINTF("Interruption failed!\n");
-        }
+        trace_ivshmem_flat_interrupt_peer(peer_id, vector_id);
+        ivshmem_flat_interrupt_peer(s, peer_id, vector_id);
         break;
     default:
         /* Should never reach out here due to iomem map range being exact. */
-        IVSHMEM_DPRINTF("No ivshmem register mapped at offset %ld\n!", offset);
+        trace_ivshmem_flat_read_write_mmr_invalid(offset);
         break;
     }
 

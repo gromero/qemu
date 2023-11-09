@@ -29,10 +29,8 @@ typedef struct IvshmemPeer {
 } IvshmemPeer;
 
 struct IvshmemFTState {
-    /*< private >*/
     SysBusDevice parent_obj;
 
-    /*< public >*/
     uint64_t msg_buf;
     int msg_buffered_bytes;
 
@@ -55,7 +53,7 @@ struct IvshmemFTState {
     uint32_t ivposition;
     uint32_t doorbell;
 
-    /* Shared mem */
+    /* Shared memory */
     MemoryRegion shmem;
     int shmem_fd;
     uint32_t shmem_size;
