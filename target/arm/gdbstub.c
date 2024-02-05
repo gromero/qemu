@@ -475,12 +475,35 @@ const char *arm_gdb_get_dynamic_xml(CPUState *cs, const char *xmlname)
     return NULL;
 }
 
+int aarch64_gdb_get_mte_reg(CPUARMState *env, struct _GByteArray * buf, int reg);
+int aarch64_gdb_get_mte_reg(CPUARMState *env, struct _GByteArray * buf, int reg)
+{
+    printf("aarch64_gdb_get_mte_reg() called!\n");
+
+    return 0;
+}
+
+int aarch64_gdb_set_mte_reg(CPUARMState *env, unsigned char *, int reg);
+int aarch64_gdb_set_mte_reg(CPUARMState *env, unsigned char *, int reg)
+{
+   printf("aarch64_gdb_set_mte_reg() called!\n");
+
+   return 0;
+}
+
 void arm_cpu_register_gdb_regs_for_features(ARMCPU *cpu)
 {
     CPUState *cs = CPU(cpu);
     CPUARMState *env = &cpu->env;
 
     if (arm_feature(env, ARM_FEATURE_AARCH64)) {
+        /*
+	 * MTE
+	 */
+	 printf("registering mte reg\n");
+         gdb_register_coprocessor(cs, aarch64_gdb_get_mte_reg,
+		                  aarch64_gdb_set_mte_reg, 1,
+				  "aarch64-mte.xml", 0);
         /*
          * The lower part of each SVE register aliases to the FPU
          * registers so we don't need to include both.

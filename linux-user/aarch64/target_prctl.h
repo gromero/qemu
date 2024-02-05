@@ -177,6 +177,7 @@ static abi_long do_prctl_set_tagged_addr_ctrl(CPUArchState *env, abi_long arg2)
         case PR_MTE_TCF_NONE:
         case PR_MTE_TCF_SYNC:
         case PR_MTE_TCF_ASYNC:
+        case PR_MTE_TCF_SYNC | PR_MTE_TCF_ASYNC: /* ASYMM mode */
             break;
         default:
             return -EINVAL;

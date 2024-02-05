@@ -1597,6 +1597,11 @@ static void handle_query_thread_extra(GArray *params, void *user_ctx)
     gdb_put_strbuf();
 }
 
+static void xxx_mem_tag(GArray *params, void *user_ctx)
+{
+ printf("qMemTag received!\n");
+}
+
 static void handle_query_supported(GArray *params, void *user_ctx)
 {
     CPUClass *cc;
@@ -1611,6 +1616,8 @@ static void handle_query_supported(GArray *params, void *user_ctx)
         g_string_append(gdbserver_state.str_buf,
             ";ReverseStep+;ReverseContinue+");
     }
+
+    g_string_append(gdbserver_state.str_buf, ";memory-tagging+");
 
 #if defined(CONFIG_USER_ONLY)
 #if defined(CONFIG_LINUX)
@@ -1773,6 +1780,13 @@ static const GdbCmdParseEntry gdb_gen_query_table[] = {
         .schema = "l:l,l0"
     },
 #endif
+    {   .handler = xxx_mem_tag,
+	.cmd_startswith = 1,
+	.cmd = "MemTags"
+    },
+    {   .handler = xxx_mem_tag,
+	.cmd = "QMemTags"
+    },
     {
         .handler = gdb_handle_query_attached,
         .cmd = "Attached:",
