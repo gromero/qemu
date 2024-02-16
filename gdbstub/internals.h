@@ -165,9 +165,10 @@ void gdb_put_buffer(const uint8_t *buf, int len);
  */
 void gdb_init_gdbserver_state(void);
 
+/*
 typedef enum GDBThreadIdKind {
     GDB_ONE_THREAD = 0,
-    GDB_ALL_THREADS,     /* One process, all threads */
+    GDB_ALL_THREADS,   
     GDB_ALL_PROCESSES,
     GDB_READ_THREAD_ERR
 } GDBThreadIdKind;
@@ -185,7 +186,7 @@ typedef union GdbCmdVariant {
 } GdbCmdVariant;
 
 #define get_param(p, i)    (&g_array_index(p, GdbCmdVariant, i))
-
+*/
 void gdb_handle_query_rcmd(GArray *params, void *user_ctx); /* softmmu */
 void gdb_handle_query_offsets(GArray *params, void *user_ctx); /* user */
 void gdb_handle_query_xfer_auxv(GArray *params, void *user_ctx); /*user */

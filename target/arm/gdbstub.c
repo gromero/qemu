@@ -479,16 +479,97 @@ int aarch64_gdb_get_mte_reg(CPUARMState *env, struct _GByteArray * buf, int reg)
 int aarch64_gdb_get_mte_reg(CPUARMState *env, struct _GByteArray * buf, int reg)
 {
     printf("aarch64_gdb_get_mte_reg() called!\n");
+    printf("buf->len = %d\n", buf->len);
+    int mmu_idx = cpu_mmu_index(env, false);
+    printf("mmu_idx = %d\n", mmu_idx);
+    // uint8_t * mem;
 
+    uint32_t r = 0xbeef;
+    // mem = allocation_tag_mem(env, mmu_idx, 0x300, MMU_DATA_LOAD, TAG_GRANULE, MMU_DATA_LOAD, 0);
+
+    // printf("mem = %p\n", mem);
+
+    int f =  page_get_flags(0x200);
+    printf("f = %d\n", f);
+
+    return gdb_get_reg32(buf, r);
     return 0;
 }
 
-int aarch64_gdb_set_mte_reg(CPUARMState *env, unsigned char *, int reg);
-int aarch64_gdb_set_mte_reg(CPUARMState *env, unsigned char *, int reg)
+int aarch64_gdb_set_mte_reg(CPUARMState *env, uint8_t *, int reg);
+int aarch64_gdb_set_mte_reg(CPUARMState *env, uint8_t *b, int reg)
 {
-   printf("aarch64_gdb_set_mte_reg() called!\n");
+   uint64_t *ptr;
+   int mflags;
+   uintptr_t index;
+   uint8_t *tags;
+   ptr = (uint64_t *)b;
 
-   return 0;
+   printf("aarch64_gdb_set_mte_reg() called!\n");
+   
+   uint64_t clean_ptr = useronly_clean_ptr(*ptr);
+   printf("Address ptr  = %lx\n", *ptr);
+   
+   mflags = page_get_flags(*ptr);
+   printf("mflags = %x\n", mflags);
+
+   tags = page_get_target_data(clean_ptr);
+
+   index = extract32(*ptr, LOG2_TAG_GRANULE + 1, TARGET_PAGE_BITS - LOG2_TAG_GRANULE - 1);
+   printf("index = %lx\n", index);
+   printf("tags = %x\n",  *(tags + index));
+
+  return 0;
+}
+
+static void xxx_mem_tag(GArray *params, void *user_ctx)
+{
+    uint64_t addr = get_param(params, 0)->val_ull;
+    uint64_t len = get_param(params, 1)->val_ul;
+    int type = get_param(params, 2)->val_ul;
+    int mflags;
+    uintptr_t index;
+    uint8_t *tags;
+   
+    GString *str_buf = g_string_new("");
+
+    printf("qMemTag received!\n");
+    printf("addr = %lx\n", addr);
+    printf("length = %lx\n", len);
+    printf("type = %x\n", type);
+
+    uint64_t clean_ptr = useronly_clean_ptr(addr);
+    printf("Clean addr = %lx\n", clean_ptr);
+
+    mflags = page_get_flags(addr);
+
+    tags = page_get_target_data(clean_ptr);
+    index = extract32(addr, LOG2_TAG_GRANULE + 1, TARGET_PAGE_BITS - LOG2_TAG_GRANULE - 1);
+
+    printf("mflags = %x\n", mflags);
+
+    printf("index = %lx\n", index);
+    printf("tags = %.2x\n",  *(tags + index));
+
+    g_string_printf(str_buf, "m%.2x", *(tags + index));
+
+    // TODO(gromer0): use gdb_put_buf instead!
+    gdb_send_packet_data(str_buf->str);
+}
+
+static /* const no sure */  GdbCmdParseEntry gdb_gen_query_table_arm[] = {
+    {   .handler = xxx_mem_tag,
+        .cmd_startswith = 1,
+        .cmd = "MemTags:",
+        .schema = "L,l:l0"
+    },
+};
+
+// void arm_cpu_register_gdb_command_tables(void);
+void arm_cpu_register_gdb_command_tables(void)
+{
+    /* Handlers for 'q' commands. */
+    set_gdb_gen_query_table_arch(gdb_gen_query_table_arm);
 }
 
 void arm_cpu_register_gdb_regs_for_features(ARMCPU *cpu)

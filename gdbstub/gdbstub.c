@@ -44,6 +44,7 @@
 #include "exec/hwaddr.h"
 
 #include "internals.h"
+#include "gdbstub.h"
 
 typedef struct GDBRegisterState {
     int base_reg;
@@ -885,7 +886,7 @@ static int cmd_parse_params(const char *data, const char *schema,
     return 0;
 }
 
-typedef void (*GdbCmdHandler)(GArray *params, void *user_ctx);
+// typedef void (*GdbCmdHandler)(GArray *params, void *user_ctx);
 
 /*
  * cmd_startswith -> cmd is compared using startswith
@@ -914,6 +915,7 @@ typedef void (*GdbCmdHandler)(GArray *params, void *user_ctx);
  * '.' -> Skip 1 char unless reached "\0"
  * Any other value is treated as the delimiter value itself
  */
+/*
 typedef struct GdbCmdParseEntry {
     GdbCmdHandler handler;
     const char *cmd;
@@ -921,6 +923,7 @@ typedef struct GdbCmdParseEntry {
     const char *schema;
     bool allow_stop_reply;
 } GdbCmdParseEntry;
+*/
 
 static inline int startswith(const char *string, const char *pattern)
 {
@@ -1597,10 +1600,15 @@ static void handle_query_thread_extra(GArray *params, void *user_ctx)
     gdb_put_strbuf();
 }
 
+/*
 static void xxx_mem_tag(GArray *params, void *user_ctx)
 {
- printf("qMemTag received!\n");
+    printf("qMemTag received!\n");
+
+    g_string_append(gdbserver_state.str_buf, "m04");
+    gdb_put_strbuf();
 }
+*/
 
 static void handle_query_supported(GArray *params, void *user_ctx)
 {
@@ -1715,6 +1723,14 @@ static const GdbCmdParseEntry gdb_gen_query_set_common_table[] = {
     },
 };
 
+
+/* Arch-specific query table */
+static GdbCmdParseEntry *gdb_gen_query_table_arch = NULL;
+void set_gdb_gen_query_table_arch(GdbCmdParseEntry *table)
+{
+    gdb_gen_query_table_arch = table;
+}
+
 static const GdbCmdParseEntry gdb_gen_query_table[] = {
     {
         .handler = handle_query_curr_tid,
@@ -1780,13 +1796,17 @@ static const GdbCmdParseEntry gdb_gen_query_table[] = {
         .schema = "l:l,l0"
     },
 #endif
+/*
     {   .handler = xxx_mem_tag,
 	.cmd_startswith = 1,
 	.cmd = "MemTags"
     },
+*/
+/*
     {   .handler = xxx_mem_tag,
 	.cmd = "QMemTags"
     },
+*/
     {
         .handler = gdb_handle_query_attached,
         .cmd = "Attached:",
@@ -1838,11 +1858,21 @@ static void handle_gen_query(GArray *params, void *user_ctx)
         return;
     }
 
-    if (process_string_cmd(get_param(params, 0)->data,
+    if (!process_string_cmd(get_param(params, 0)->data,
                            gdb_gen_query_table,
                            ARRAY_SIZE(gdb_gen_query_table))) {
-        gdb_put_packet("");
+        return;
     }
+
+    if (gdb_gen_query_table_arch &&
+        !process_string_cmd(get_param(params, 0)->data,
+                            gdb_gen_query_table_arch,
+                            1 /* FIX ME */)) {
+        return;
+    }
+
+    /* Can't handle query, return Empty response. */
+    gdb_put_packet("");
 }
 
 static void handle_gen_set(GArray *params, void *user_ctx)
@@ -1880,6 +1910,14 @@ static void handle_target_halt(GArray *params, void *user_ctx)
      */
     gdb_breakpoint_remove_all(gdbserver_state.c_cpu);
 }
+
+
+void gdb_send_packet_data(const char *response)
+{
+    g_string_append(gdbserver_state.str_buf, response);
+    gdb_put_strbuf();
+}
+
 
 static int gdb_handle_packet(const char *line_buf)
 {
