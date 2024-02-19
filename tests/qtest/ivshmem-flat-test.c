@@ -101,8 +101,10 @@ static QTestState *setup_vm(void)
     cmd_line = g_strdup_printf("-machine lm3s6965evb "
                                "-chardev socket,path=%s,id=ivshm "
                                "-device ivshmem-flat,chardev=ivshm,"
-                               "x-irq-qompath='/machine/unattached/device[1]/nvic/unnamed-gpio-in[0]',"
-                               "x-bus-qompath='/sysbus',shmem-size=%d",
+                               "x-irq-qompath='/machine/soc/v7m/nvic/unnamed-gpio-in[0]',"
+                               "x-bus-address-iomem=0x400FF000,"
+                               "x-bus-address-shmem=0x40100000,"
+                               "shmem-size=%d",
                                server_socket_path, SHM_SIZE);
     qts = qtest_init(cmd_line);
 
@@ -118,7 +120,7 @@ static void test_ivshmem_flat_irq(void)
 
     qtest_irq_intercept_out_named(vm_state,
                                   "/machine/peripheral-anon/device[0]",
-                                  "irq-output");
+                                  "sysbus-irq");
 
     /* IVPOSTION has the device's own ID distributed by the ivshmem-server. */
     own_id = read_reg(vm_state, IVPOSITION);
@@ -221,7 +223,7 @@ static void test_ivshmem_flat_shm_pair(void)
     /* Observe vm1 IRQ output line first. */
     qtest_irq_intercept_out_named(vm1_state,
                                   "/machine/peripheral-anon/device[0]",
-                                  "irq-output");
+                                  "sysbus-irq");
 
     /* Notify (interrupt) VM1 from VM0. */
     write_reg(vm0_state, DOORBELL, (vm1_peer_id << 16) | 0 /* vector 0 */);
@@ -232,7 +234,7 @@ static void test_ivshmem_flat_shm_pair(void)
     /* Secondly, observe VM0 IRQ output line first. */
     qtest_irq_intercept_out_named(vm0_state,
                                   "/machine/peripheral-anon/device[0]",
-                                  "irq-output");
+                                  "sysbus-irq");
 
     /* ... and do the opposite: notify (interrupt) VM0 from VM1. */
     write_reg(vm1_state, DOORBELL, (vm0_peer_id << 16) | 0 /* vector 0 */);
