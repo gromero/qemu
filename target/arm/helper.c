@@ -10600,6 +10600,12 @@ void arm_log_exception(CPUState *cs)
         qemu_log_mask(CPU_LOG_INT, "Taking exception %d [%s] on CPU %d\n",
                       idx, exc, cs->cpu_index);
     }
+
+    /*
+    if (idx == EXCP_SWI) {
+        printf("Taking exception %d [%s] on CPU %d\n", idx, "SVC", cs->cpu_index);
+    }
+    */
 }
 
 /*

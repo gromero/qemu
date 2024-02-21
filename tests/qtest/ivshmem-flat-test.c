@@ -44,34 +44,32 @@ static void abort_handler(void *data)
 }
 
 /*
- * Check if exactly 1 positive pulse (low->high->low) on 'irq' IRQ line happens
- * in 'timeout' second(s). 'irq' must be intercepted using qtest_irq_intercept_*
- * before this function can be used on it. It returns 0 when pulse is detected,
+ * Check if exactly 1 positive pulse (low->high->low) on 'irq' qtest IRQ line
+ * happens. N.B.: 'irq' must be intercepted using qtest_irq_intercept_* before
+ * this function can be used on it. It returns 0 when pulse is detected,
  * otherwise 1.
  */
-static int test_ivshmem_flat_irq_positive_pulse(QTestState *qts, int irq,
-                                                int timeout)
+static int test_ivshmem_flat_irq_positive_pulse(QTestState *qts, int irq)
 {
     uint64_t num_raises = 0;
     uint64_t num_lows = 0;
-    uint64_t end_time;
+    int attempts = 0;
 
-    end_time = g_get_monotonic_time() + timeout * G_TIME_SPAN_SECOND;
-    do {
+    while (attempts < 5) {
         num_raises = qtest_get_irq_raised_counter(qts, 0);
         if (num_raises) {
             num_lows = qtest_get_irq_lowered_counter(qts, 0);
-            /* Check for 1 raise and 1 low IRQ event. */
+            /* Check for exactly 1 raise and 1 low IRQ event */
             if (num_raises == num_lows && num_lows == 1) {
-                return 0;
-            } else {
-                g_message("%s: Timeout expired", __func__);
-                return 1;
+                return 0; /* Pulse detected */
             }
         }
-        qtest_clock_step(qts, 10000);
-    } while (g_get_monotonic_time() < end_time);
 
+	g_usleep(10000);
+	attempts++;
+    }
+
+    g_message("%s: Timeout expired", __func__);
     return 1;
 }
 
@@ -98,6 +96,12 @@ static QTestState *setup_vm(void)
     QTestState *qts;
     const char *cmd_line;
 
+    /*
+     * x-bus-address-{iomem,shmem} are just random addresses that don't conflict
+     * with any other address in the lm3s6965evb machine. shmem-size used is
+     * much smaller than the ivshmem server default (4 MiB) to save memory
+     * resources when testing.
+     */
     cmd_line = g_strdup_printf("-machine lm3s6965evb "
                                "-chardev socket,path=%s,id=ivshm "
                                "-device ivshmem-flat,chardev=ivshm,"
@@ -129,12 +133,12 @@ static void test_ivshmem_flat_irq(void)
     write_reg(vm_state, DOORBELL, (own_id << 16) | 0 /* vector 0 */);
 
     /*
-     * Check intercepted device's IRQ output line. Named IRQ line 'irq-output'
-     * was associated to qtest IRQ 0 and after self notification qtest IRQ 0
-     * must be toggled by the device. The test fails if no toggling is detected
-     * in 2 seconds.
+     * Check intercepted device's IRQ output line. 'sysbus-irq' was associated
+     * to qtest IRQ 0 when intercepted and after self notification qtest IRQ 0
+     * must be toggled by the device. The test fails if no toggling is detected.
      */
-    g_assert(test_ivshmem_flat_irq_positive_pulse(vm_state, 0, 2) == 0);
+    g_assert(test_ivshmem_flat_irq_positive_pulse(vm_state,
+                                                  0 /* qtest IRQ */) == 0);
 
     qtest_quit(vm_state);
 }
@@ -229,7 +233,8 @@ static void test_ivshmem_flat_shm_pair(void)
     write_reg(vm0_state, DOORBELL, (vm1_peer_id << 16) | 0 /* vector 0 */);
 
     /* Check if VM1 IRQ output line is toggled after notification from VM0. */
-    g_assert(test_ivshmem_flat_irq_positive_pulse(vm1_state, 0, 2) == 0);
+    g_assert(test_ivshmem_flat_irq_positive_pulse(vm1_state,
+                                                  0 /* qtest IRQ */) == 0);
 
     /* Secondly, observe VM0 IRQ output line first. */
     qtest_irq_intercept_out_named(vm0_state,
@@ -240,7 +245,8 @@ static void test_ivshmem_flat_shm_pair(void)
     write_reg(vm1_state, DOORBELL, (vm0_peer_id << 16) | 0 /* vector 0 */);
 
     /* Check if VM0 IRQ output line is toggled after notification from VM0. */
-    g_assert(test_ivshmem_flat_irq_positive_pulse(vm0_state, 0, 2) == 0);
+    g_assert(test_ivshmem_flat_irq_positive_pulse(vm0_state,
+                                                  0 /* qtest IRQ */) == 0);
 
     /* Prepare test data with random values. */
     data = g_malloc(SHM_SIZE);
