@@ -1828,6 +1828,13 @@ static const GdbCmdParseEntry gdb_gen_query_table[] = {
 #endif
 };
 
+/* Arch-specific set table */
+static GdbCmdParseEntry *gdb_gen_set_table_arch = NULL;
+void set_gdb_gen_set_table_arch(GdbCmdParseEntry *table)
+{
+    gdb_gen_set_table_arch = table;
+}
+
 static const GdbCmdParseEntry gdb_gen_set_table[] = {
     /* Order is important if has same prefix */
     {
@@ -1887,11 +1894,21 @@ static void handle_gen_set(GArray *params, void *user_ctx)
         return;
     }
 
-    if (process_string_cmd(get_param(params, 0)->data,
+    if (!process_string_cmd(get_param(params, 0)->data,
                            gdb_gen_set_table,
                            ARRAY_SIZE(gdb_gen_set_table))) {
-        gdb_put_packet("");
+        return;
     }
+
+    if (gdb_gen_set_table_arch &&
+        !process_string_cmd(get_param(params, 0)->data,
+                            gdb_gen_set_table_arch,
+                            1 /* FIX ME */)) {
+         return;
+    }
+
+    /* Can't handle set, return Empty response. */
+    gdb_put_packet("");
 }
 
 static void handle_target_halt(GArray *params, void *user_ctx)
