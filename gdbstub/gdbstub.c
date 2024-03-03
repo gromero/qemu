@@ -1650,7 +1650,10 @@ static void handle_query_supported(GArray *params, void *user_ctx)
     if (gdbserver_state.c_cpu->opaque) {
         g_string_append(gdbserver_state.str_buf, ";qXfer:auxv:read+");
     }
+
     g_string_append(gdbserver_state.str_buf, ";QCatchSyscalls+");
+
+    g_string_append(gdbserver_state.str_buf, ";qXfer:siginfo:read+");
 #endif
     g_string_append(gdbserver_state.str_buf, ";qXfer:exec-file:read+");
 #endif
@@ -1799,6 +1802,12 @@ static const GdbCmdParseEntry gdb_gen_query_table[] = {
         .cmd_startswith = 1,
         .schema = "l,l0"
     },
+    {
+        .handler = gdb_handle_query_xfer_siginfo,
+        .cmd = "Xfer:siginfo:read::",
+        .cmd_startswith = 1,
+        .schema = "l,l0"
+     },
 #endif
     {
         .handler = gdb_handle_query_xfer_exec_file,
