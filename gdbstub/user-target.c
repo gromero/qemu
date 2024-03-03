@@ -285,6 +285,29 @@ void gdb_handle_query_xfer_auxv(GArray *params, void *user_ctx)
     gdb_put_packet_binary(gdbserver_state.str_buf->str,
                       gdbserver_state.str_buf->len, true);
 }
+
+void gdb_handle_query_xfer_siginfo(GArray *params, void *user_ctx)
+{
+    unsigned long offset, len;
+    uint8_t *siginfo_offset;
+
+    offset = get_param(params, 0)->val_ul;
+    len = get_param(params, 1)->val_ul;
+
+    if (offset + len > sizeof(target_siginfo_t)) {
+        /* Invalid offset and/or requested length. */
+        gdb_put_packet("E01");
+        return;
+    }
+
+    siginfo_offset = (uint8_t *)gdbserver_state.siginfo + offset;
+
+    /* Reply */
+    g_string_assign(gdbserver_state.str_buf, "l");
+    gdb_memtox(gdbserver_state.str_buf, (const char *)siginfo_offset, len);
+    gdb_put_packet_binary(gdbserver_state.str_buf->str,
+                          gdbserver_state.str_buf->len, true);
+}
 #endif
 
 static const char *get_filename_param(GArray *params, int i)
