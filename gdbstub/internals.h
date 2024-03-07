@@ -58,6 +58,9 @@ typedef struct GDBState {
     int line_csum; /* checksum at the end of the packet */
     GByteArray *last_packet;
     int signal;
+#ifdef CONFIG_USER_ONLY
+    uint8_t siginfo[MAX_SIGINFO_LENGTH];
+#endif
     bool multiprocess;
     GDBProcess *processes;
     int process_num;
