@@ -10,11 +10,12 @@
 #include "qemu/osdep.h"
 #include "exec/gdbstub.h"
 #include "qemu.h"
-#include "internals.h"
 #ifdef CONFIG_LINUX
 #include "linux-user/loader.h"
 #include "linux-user/qemu.h"
+#include "gdbstub/user.h"
 #endif
+#include "internals.h"
 
 /*
  * Map target signal numbers to GDB protocol signal numbers and vice
