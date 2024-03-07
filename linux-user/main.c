@@ -1014,7 +1014,7 @@ int main(int argc, char **argv, char **envp)
                     gdbstub);
             exit(EXIT_FAILURE);
         }
-        gdb_handlesig(cpu, 0);
+        gdb_handlesig(cpu, 0, NULL);
     }
 
 #ifdef CONFIG_SEMIHOSTING
