@@ -44,7 +44,6 @@
 #include "exec/hwaddr.h"
 
 #include "internals.h"
-#include "gdbstub.h"
 
 typedef struct GDBRegisterState {
     int base_reg;
@@ -1627,6 +1626,8 @@ static void handle_query_supported(GArray *params, void *user_ctx)
 
     g_string_append(gdbserver_state.str_buf, ";memory-tagging+");
 
+    g_string_append(gdbserver_state.str_buf, ";memory-tagging-check-addr+");
+
 #if defined(CONFIG_USER_ONLY)
 #if defined(CONFIG_LINUX)
     if (gdbserver_state.c_cpu->opaque) {
@@ -1726,10 +1727,12 @@ static const GdbCmdParseEntry gdb_gen_query_set_common_table[] = {
 };
 
 /* Arch-specific query table */
-static GdbCmdParseEntry *gdb_gen_query_table_arch = NULL;
-void set_gdb_gen_query_table_arch(GdbCmdParseEntry *table)
+static GdbCmdParseEntry *gdb_gen_query_table_arch = NULL ;
+static int gdb_gen_query_table_arch_size = 0;
+void set_gdb_gen_query_table_arch(GdbCmdParseEntry  *table, int table_size)
 {
     gdb_gen_query_table_arch = table;
+    gdb_gen_query_table_arch_size = table_size;
 }
 
 static const GdbCmdParseEntry gdb_gen_query_table[] = {
@@ -1881,7 +1884,7 @@ static void handle_gen_query(GArray *params, void *user_ctx)
     if (gdb_gen_query_table_arch &&
         !process_string_cmd(get_param(params, 0)->data,
                             gdb_gen_query_table_arch,
-                            1 /* FIX ME */)) {
+                            gdb_gen_query_table_arch_size)) {
         return;
     }
 

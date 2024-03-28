@@ -506,10 +506,10 @@ int aarch64_gdb_set_mte_reg(CPUARMState *env, uint8_t *b, int reg)
    ptr = (uint64_t *)b;
 
    printf("aarch64_gdb_set_mte_reg() called!\n");
-   
+
    uint64_t clean_ptr = useronly_clean_ptr(*ptr);
    printf("Address ptr  = %lx\n", *ptr);
-   
+
    mflags = page_get_flags(*ptr);
    printf("mflags = %x\n", mflags);
 
@@ -558,12 +558,39 @@ static void xxx_get_mem_tag(GArray *params, void *user_ctx)
     gdb_send_packet_data(str_buf->str);
 }
 
+// $qMemTagAddrCheck:400000802000:#c7
+static void xxx_check_memtag_addr(GArray *params, void *user_ctx)
+{
+    uint64_t addr = get_param(params, 0)->val_ull;
+    int mflags = page_get_flags(useronly_clean_ptr(addr));
+
+    /* FIXME: free after use */
+    GString *str_buf = g_string_new("");
+
+    printf("Received qMemTagCheckAddr packet.\n");
+
+    if (!(mflags & PAGE_ANON) || !(mflags & PAGE_MTE)) {
+        printf("Addr not tagged!\n");
+        g_string_printf(str_buf, "%.2x", 0 /* false */);
+    } else {
+        printf("Addr tagged!\n");
+        g_string_printf(str_buf, "%.2x", 1 /* true */);
+    }
+
+    gdb_send_packet_data(str_buf->str);
+}
+
 static /* const no sure */  GdbCmdParseEntry gdb_gen_query_table_arm[] = {
     {   .handler = xxx_get_mem_tag,
         .cmd_startswith = 1,
         .cmd = "MemTags:",
         .schema = "L,l:l0"
     },
+    {   .handler = xxx_check_memtag_addr,
+        .cmd_startswith = 1,
+	.cmd = "MemTagCheckAddr:",
+	.schema = "L0"
+    }
 };
 
 static void xxx_set_mem_tag(GArray *params, void *user_ctx)
@@ -588,13 +615,13 @@ static void xxx_set_mem_tag(GArray *params, void *user_ctx)
     printf("Clean addr = %lx\n", clean_ptr);
     tags = page_get_target_data(clean_ptr);
     index = extract32(addr, LOG2_TAG_GRANULE + 1, TARGET_PAGE_BITS - LOG2_TAG_GRANULE - 1);
-   
+
     uint8_t tag = 0xF & atoi(tag_bytes); /* TODO: Support multiple tags */
     *(tags + index) = tag; /* XXX: FIXME for two tags */
 
     printf("Setting tag %.2d\n", *(tags + index));
 
-    g_string_printf(str_buf, "OK"); 
+    g_string_printf(str_buf, "OK");
     gdb_send_packet_data(str_buf->str);
 }
 
@@ -609,8 +636,14 @@ static GdbCmdParseEntry gdb_gen_set_table_arm[] = {
 
 void arm_cpu_register_gdb_command_tables(void)
 {
+    // g_autoptr(GArray) a = g_array_new(FALSE, FALSE, sizeof(GdbCmdParseEntry));
+    // g_array_append_vals(a, gdb_gen_query_table_arm, ARRAY_SIZE(gdb_gen_query_table_arm));
+
+    // printf("a->len = %d\n", a->len);
+
     /* Handlers for 'q' commands. */
-    set_gdb_gen_query_table_arch(gdb_gen_query_table_arm);
+    set_gdb_gen_query_table_arch(gdb_gen_query_table_arm,
+		                 ARRAY_SIZE(gdb_gen_query_table_arm));
 
     /* Handlers for 'Q' commands. */
     set_gdb_gen_set_table_arch(gdb_gen_set_table_arm);

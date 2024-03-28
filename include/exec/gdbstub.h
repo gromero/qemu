@@ -165,17 +165,19 @@ typedef struct GdbCmdParseEntry {
     bool allow_stop_reply;
 } GdbCmdParseEntry;
 
+#define get_cmd_parsers(p) (&g_array_index(p, GdbCmdParseEntry, 0))
+
 /**
  * set_gdb_gen_query_table_arch() - set a table to handle arch-specific query
  * packets
  */
-void set_gdb_gen_query_table_arch(GdbCmdParseEntry *table);
+void set_gdb_gen_query_table_arch(GdbCmdParseEntry *table, int table_size);
 
 /**
  * set_gdb_gen_set_table_arch() - set a table to handle arch-specific set
  * packets
  */
-void set_gdb_gen_set_table_arch(GdbCmdParseEntry *table);
+void set_gdb_gen_set_table_arch(GdbCmdParseEntry *);
 
 void gdb_send_packet_data(const char *response);
 
