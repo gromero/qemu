@@ -554,6 +554,8 @@ static void xxx_get_mem_tag(GArray *params, void *user_ctx)
 
     g_string_printf(str_buf, "m%.2x", *(tags + index));
 
+    // g_string_printf(str_buf, "m0j");
+
     // TODO(gromer0): use gdb_put_buf instead!
     gdb_send_packet_data(str_buf->str);
 }
@@ -574,7 +576,9 @@ static void xxx_check_memtag_addr(GArray *params, void *user_ctx)
         g_string_printf(str_buf, "%.2x", 0 /* false */);
     } else {
         printf("Addr tagged!\n");
-        g_string_printf(str_buf, "%.2x", 1 /* true */);
+	g_string_printf(str_buf, "%.2x", 1); // true
+	// char n[] = "\0";
+        // g_string_printf(str_buf, "%s", n);
     }
 
     gdb_send_packet_data(str_buf->str);
@@ -588,7 +592,7 @@ static /* const no sure */  GdbCmdParseEntry gdb_gen_query_table_arm[] = {
     },
     {   .handler = xxx_check_memtag_addr,
         .cmd_startswith = 1,
-	.cmd = "MemTagCheckAddr:",
+	.cmd = "IsAddressTagged:",
 	.schema = "L0"
     }
 };
