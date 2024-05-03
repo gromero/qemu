@@ -687,13 +687,6 @@ void arm_cpu_register_gdb_regs_for_features(ARMCPU *cpu)
 
     if (arm_feature(env, ARM_FEATURE_AARCH64)) {
         /*
-	 * MTE
-	 */
-	 printf("registering mte reg\n");
-         gdb_register_coprocessor(cs, aarch64_gdb_get_mte_reg,
-		                  aarch64_gdb_set_mte_reg, 1,
-				  "aarch64-mte.xml", 0);
-        /*
          * The lower part of each SVE register aliases to the FPU
          * registers so we don't need to include both.
          */
@@ -718,6 +711,13 @@ void arm_cpu_register_gdb_regs_for_features(ARMCPU *cpu)
             gdb_register_coprocessor(cs, aarch64_gdb_get_pauth_reg,
                                      aarch64_gdb_set_pauth_reg,
                                      4, "aarch64-pauth.xml", 0);
+        }
+
+        /* Memory Tagging Extension (MTE) 'tag_ctl' register. */
+        if (isar_feature_aa64_mte(&cpu->isar)) {
+            gdb_register_coprocessor(cs, aarch64_gdb_get_mte_reg,
+                                     aarch64_gdb_set_mte_reg,
+                                     1, "aarch64-mte.xml", 0);
         }
 #endif
     } else {
