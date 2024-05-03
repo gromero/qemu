@@ -2319,7 +2319,7 @@ static void arm_cpu_realizefn(DeviceState *dev, Error **errp)
 
     register_cp_regs_for_features(cpu);
     arm_cpu_register_gdb_regs_for_features(cpu);
-    arm_cpu_register_gdb_command_tables();
+    arm_cpu_register_gdb_command(cpu);
 
     init_cpreg_list(cpu);
 

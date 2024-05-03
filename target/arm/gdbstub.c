@@ -621,10 +621,10 @@ enum Packet {
     qMemTags,
     qIsAddressTagged,
     QMemTags,
-    MAX_NUM_PACKET
+    NUM_PACKETS
 };
 
-static GdbCmdParseEntry packet_handler_table[MAX_NUM_PACKET] = {
+static GdbCmdParseEntry packet_handler_table[NUM_PACKETS] = {
     [qMemTags] = {
         .handler = xxx_get_mem_tag,
         .cmd_startswith = 1,
@@ -649,16 +649,17 @@ static void add_packet_handler(GArray *handlers, enum Packet packet) {
     g_array_append_val(handlers, packet_handler_table[packet]);
 }
 
-void arm_cpu_register_gdb_command_tables(void)
+void arm_cpu_register_gdb_command(ARMCPU *cpu)
 {
-    bool mte = true;
     GArray *gdb_gen_query_table_arm =
         g_array_new(FALSE, FALSE, sizeof(GdbCmdParseEntry));
     GArray *gdb_gen_set_table_arm =
         g_array_new(FALSE, FALSE, sizeof(GdbCmdParseEntry));
     GString *supported_features = g_string_new("");
 
-    if (mte) {
+#ifdef TARGET_AARCH64
+    /* MTE */
+    if (isar_feature_aa64_mte(&cpu->isar)) {
         g_string_append(supported_features, ";memory-tagging+");
 
         add_packet_handler(gdb_gen_query_table_arm, qMemTags);
@@ -666,6 +667,7 @@ void arm_cpu_register_gdb_command_tables(void)
 
         add_packet_handler(gdb_gen_set_table_arm, QMemTags);
     }
+#endif
 
     /* Set arch-specific handlers for 'q' commands. */
     set_gdb_gen_query_table_arch(&g_array_index(gdb_gen_query_table_arm,
@@ -677,6 +679,7 @@ void arm_cpu_register_gdb_command_tables(void)
                                GdbCmdParseEntry, 0),
                                gdb_gen_set_table_arm->len);
 
+    /* Set arch-specific qSupported feature. */
     set_query_supported_arch(supported_features->str);
 }
 
