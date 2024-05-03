@@ -179,6 +179,10 @@ void set_gdb_gen_query_table_arch(GdbCmdParseEntry *table, int size);
  */
 void set_gdb_gen_set_table_arch(GdbCmdParseEntry *, int size);
 
+/**
+ * set_query_supported_arch() - set arch-specific features in qSupported
+ * features
+ */
 void set_query_supported_arch(char *);
 
 void gdb_send_packet_data(const char *response);
