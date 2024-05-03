@@ -171,13 +171,15 @@ typedef struct GdbCmdParseEntry {
  * set_gdb_gen_query_table_arch() - set a table to handle arch-specific query
  * packets
  */
-void set_gdb_gen_query_table_arch(GdbCmdParseEntry *table, int table_size);
+void set_gdb_gen_query_table_arch(GdbCmdParseEntry *table, int size);
 
 /**
  * set_gdb_gen_set_table_arch() - set a table to handle arch-specific set
  * packets
  */
-void set_gdb_gen_set_table_arch(GdbCmdParseEntry *);
+void set_gdb_gen_set_table_arch(GdbCmdParseEntry *, int size);
+
+void set_query_supported_arch(char *);
 
 void gdb_send_packet_data(const char *response);
 

@@ -584,21 +584,9 @@ static void xxx_check_memtag_addr(GArray *params, void *user_ctx)
     gdb_send_packet_data(str_buf->str);
 }
 
-static /* const no sure */  GdbCmdParseEntry gdb_gen_query_table_arm[] = {
-    {   .handler = xxx_get_mem_tag,
-        .cmd_startswith = 1,
-        .cmd = "MemTags:",
-        .schema = "L,l:l0"
-    },
-    {   .handler = xxx_check_memtag_addr,
-        .cmd_startswith = 1,
-	.cmd = "IsAddressTagged:",
-	.schema = "L0"
-    }
-};
-
 static void xxx_set_mem_tag(GArray *params, void *user_ctx)
 {
+    // ‘QMemTags:start address,length:type:tag bytes’
     uint64_t addr = get_param(params, 0)->val_ull;
     uint64_t len = get_param(params, 1)->val_ul;
     int type = get_param(params, 2)->val_ul;
@@ -629,28 +617,67 @@ static void xxx_set_mem_tag(GArray *params, void *user_ctx)
     gdb_send_packet_data(str_buf->str);
 }
 
-static GdbCmdParseEntry gdb_gen_set_table_arm[] = {
-    // ‘QMemTags:start address,length:type:tag bytes’
-    {   .handler = xxx_set_mem_tag,
+enum Packet {
+    qMemTags,
+    qIsAddressTagged,
+    QMemTags,
+    MAX_NUM_PACKET
+};
+
+static GdbCmdParseEntry packet_handler_table[MAX_NUM_PACKET] = {
+    [qMemTags] = {
+        .handler = xxx_get_mem_tag,
+        .cmd_startswith = 1,
+        .cmd = "MemTags:",
+        .schema = "L,l:l0"
+    },
+    [qIsAddressTagged] = {
+        .handler = xxx_check_memtag_addr,
+        .cmd_startswith = 1,
+        .cmd = "IsAddressTagged:",
+        .schema = "L0"
+    },
+    [QMemTags] = {
+        .handler = xxx_set_mem_tag,
         .cmd_startswith = 1,
         .cmd = "MemTags:",
         .schema = "L,l:l:s0"
     },
 };
 
+static void add_packet_handler(GArray *handlers, enum Packet packet) {
+    g_array_append_val(handlers, packet_handler_table[packet]);
+}
+
 void arm_cpu_register_gdb_command_tables(void)
 {
-    // g_autoptr(GArray) a = g_array_new(FALSE, FALSE, sizeof(GdbCmdParseEntry));
-    // g_array_append_vals(a, gdb_gen_query_table_arm, ARRAY_SIZE(gdb_gen_query_table_arm));
+    bool mte = true;
+    GArray *gdb_gen_query_table_arm =
+        g_array_new(FALSE, FALSE, sizeof(GdbCmdParseEntry));
+    GArray *gdb_gen_set_table_arm =
+        g_array_new(FALSE, FALSE, sizeof(GdbCmdParseEntry));
+    GString *supported_features = g_string_new("");
 
-    // printf("a->len = %d\n", a->len);
+    if (mte) {
+        g_string_append(supported_features, ";memory-tagging+");
 
-    /* Handlers for 'q' commands. */
-    set_gdb_gen_query_table_arch(gdb_gen_query_table_arm,
-		                 ARRAY_SIZE(gdb_gen_query_table_arm));
+        add_packet_handler(gdb_gen_query_table_arm, qMemTags);
+        add_packet_handler(gdb_gen_query_table_arm, qIsAddressTagged);
 
-    /* Handlers for 'Q' commands. */
-    set_gdb_gen_set_table_arch(gdb_gen_set_table_arm);
+        add_packet_handler(gdb_gen_set_table_arm, QMemTags);
+    }
+
+    /* Set arch-specific handlers for 'q' commands. */
+    set_gdb_gen_query_table_arch(&g_array_index(gdb_gen_query_table_arm,
+                                 GdbCmdParseEntry, 0),
+                                 gdb_gen_query_table_arm->len);
+
+    /* Set arch-specific handlers for 'Q' commands. */
+    set_gdb_gen_set_table_arch(&g_array_index(gdb_gen_set_table_arm,
+                               GdbCmdParseEntry, 0),
+                               gdb_gen_set_table_arm->len);
+
+    set_query_supported_arch(supported_features->str);
 }
 
 void arm_cpu_register_gdb_regs_for_features(ARMCPU *cpu)

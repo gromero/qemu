@@ -1609,6 +1609,12 @@ static void xxx_mem_tag(GArray *params, void *user_ctx)
 }
 */
 
+char *query_supported_arch = NULL;
+void set_query_supported_arch(char *query_supported)
+{
+    query_supported_arch = query_supported;
+}
+
 static void handle_query_supported(GArray *params, void *user_ctx)
 {
     CPUClass *cc;
@@ -1623,10 +1629,6 @@ static void handle_query_supported(GArray *params, void *user_ctx)
         g_string_append(gdbserver_state.str_buf,
             ";ReverseStep+;ReverseContinue+");
     }
-
-    g_string_append(gdbserver_state.str_buf, ";memory-tagging+");
-
-    g_string_append(gdbserver_state.str_buf, ";memory-tagging-check-addr+");
 
 #if defined(CONFIG_USER_ONLY)
 #if defined(CONFIG_LINUX)
@@ -1645,6 +1647,11 @@ static void handle_query_supported(GArray *params, void *user_ctx)
     }
 
     g_string_append(gdbserver_state.str_buf, ";vContSupported+;multiprocess+");
+
+    if (query_supported_arch) {
+        g_string_append(gdbserver_state.str_buf, query_supported_arch);
+    }
+
     gdb_put_strbuf();
 }
 
@@ -1729,10 +1736,10 @@ static const GdbCmdParseEntry gdb_gen_query_set_common_table[] = {
 /* Arch-specific query table */
 static GdbCmdParseEntry *gdb_gen_query_table_arch = NULL ;
 static int gdb_gen_query_table_arch_size = 0;
-void set_gdb_gen_query_table_arch(GdbCmdParseEntry  *table, int table_size)
+void set_gdb_gen_query_table_arch(GdbCmdParseEntry  *table, int size)
 {
     gdb_gen_query_table_arch = table;
-    gdb_gen_query_table_arch_size = table_size;
+    gdb_gen_query_table_arch_size = size;
 }
 
 static const GdbCmdParseEntry gdb_gen_query_table[] = {
@@ -1840,9 +1847,11 @@ static const GdbCmdParseEntry gdb_gen_query_table[] = {
 
 /* Arch-specific set table */
 static GdbCmdParseEntry *gdb_gen_set_table_arch = NULL;
-void set_gdb_gen_set_table_arch(GdbCmdParseEntry *table)
+static int gdb_gen_set_table_arch_size = 0;
+void set_gdb_gen_set_table_arch(GdbCmdParseEntry *table, int size)
 {
     gdb_gen_set_table_arch = table;
+    gdb_gen_set_table_arch_size = size;
 }
 
 static const GdbCmdParseEntry gdb_gen_set_table[] = {
@@ -1913,7 +1922,7 @@ static void handle_gen_set(GArray *params, void *user_ctx)
     if (gdb_gen_set_table_arch &&
         !process_string_cmd(get_param(params, 0)->data,
                             gdb_gen_set_table_arch,
-                            1 /* FIX ME */)) {
+                            gdb_gen_set_table_arch_size)) {
          return;
     }
 
