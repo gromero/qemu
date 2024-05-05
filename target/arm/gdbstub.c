@@ -556,13 +556,13 @@ static void xxx_get_mem_tag(GArray *params, void *user_ctx)
 
     tags = page_get_target_data(clean_addr);
     /*
-     * 2 tags (4 bits each) are kept in a single byte for compactness, so first
-     * the index for 2 packed granule tags is found for the page tags, and then
-     * the correct index for a single granule tag is found and used to obtain
-     * the address tag from the nibble.
+     * Tags are per granule (16 bytes). 2 tags (4 bits each) are kept in a
+     * single byte for compactness, so first a page tag index for 2 packed
+     * granule tags (1 byte) is found, and then an index for a single granule
+     * tag (nibble) is found, and finally used to obtain the address tag.
      */
     granules_index = extract32(clean_addr, LOG2_TAG_GRANULE + 1,
-                                   TARGET_PAGE_BITS - LOG2_TAG_GRANULE - 1);
+                               TARGET_PAGE_BITS - LOG2_TAG_GRANULE - 1);
     granule_index = extract32(clean_addr, LOG2_TAG_GRANULE, 1);
 
     addr_tag = *(tags + granules_index);
@@ -574,42 +574,43 @@ static void xxx_get_mem_tag(GArray *params, void *user_ctx)
     }
 
     g_string_printf(str_buf, "m%.2x", addr_tag);
+
     gdb_put_packet(str_buf->str);
 }
 
-// $qMemTagAddrCheck:400000802000:#c7
 static void xxx_check_memtag_addr(GArray *params, void *user_ctx)
 {
     uint64_t addr = get_param(params, 0)->val_ull;
-    int mflags = page_get_flags(useronly_clean_ptr(addr));
 
-    /* FIXME: free after use */
-    GString *str_buf = g_string_new("");
+    uint64_t clean_addr;
+    int mflags;
 
-    printf("Received qMemTagCheckAddr packet.\n");
+    g_autoptr(GString) str_buf = g_string_new(NULL);
 
-    if (!(mflags & PAGE_ANON) || !(mflags & PAGE_MTE)) {
-        printf("Addr not tagged!\n");
-        g_string_printf(str_buf, "%.2x", 0 /* false */);
+    /* Remove any non-addressing bits. */
+    clean_addr = useronly_clean_ptr(addr);
+
+    mflags = page_get_flags(clean_addr);
+    if (mflags & PAGE_ANON && mflags & PAGE_MTE) {
+        /* Address is tagged. */
+        g_string_printf(str_buf, "%.2x", 1 /* true */);
     } else {
-        printf("Addr tagged!\n");
-	g_string_printf(str_buf, "%.2x", 1); // true
-	// char n[] = "\0";
-        // g_string_printf(str_buf, "%s", n);
+        /* Address is not tagged. */
+        g_string_printf(str_buf, "%.2x", 0 /* false */);
     }
 
     gdb_put_packet(str_buf->str);
 }
 
+// ‘QMemTags:start address,length:type:tag bytes’
 static void xxx_set_mem_tag(GArray *params, void *user_ctx)
 {
-    // ‘QMemTags:start address,length:type:tag bytes’
     uint64_t addr = get_param(params, 0)->val_ull;
     uint64_t len = get_param(params, 1)->val_ul;
     int type = get_param(params, 2)->val_ul;
     char const *tag_bytes = get_param(params, 3)->data;
 
-    GString *str_buf = g_string_new("");
+    g_autoptr(GString) str_buf = g_string_new(NULL);
 
     printf("QMemTag received!\n");
     printf("addr = %lx\n", addr);
@@ -631,6 +632,7 @@ static void xxx_set_mem_tag(GArray *params, void *user_ctx)
     printf("Setting tag %.2d\n", *(tags + index));
 
     g_string_printf(str_buf, "OK");
+
     gdb_put_packet(str_buf->str);
 }
 
