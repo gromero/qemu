@@ -1899,14 +1899,6 @@ static void handle_target_halt(GArray *params, void *user_ctx)
     gdb_breakpoint_remove_all(gdbserver_state.c_cpu);
 }
 
-
-void gdb_send_packet_data(const char *response)
-{
-    g_string_append(gdbserver_state.str_buf, response);
-    gdb_put_strbuf();
-}
-
-
 static int gdb_handle_packet(const char *line_buf)
 {
     const GdbCmdParseEntry *cmd_parser = NULL;

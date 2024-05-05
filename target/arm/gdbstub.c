@@ -527,37 +527,54 @@ static void xxx_get_mem_tag(GArray *params, void *user_ctx)
     uint64_t addr = get_param(params, 0)->val_ull;
     uint64_t len = get_param(params, 1)->val_ul;
     int type = get_param(params, 2)->val_ul;
-    int mflags;
-    uintptr_t index;
+
+    uint64_t clean_addr;
     uint8_t *tags;
+    int granules_index;
+    int granule_index;
+    uint8_t addr_tag;
 
-    /* FIXME: free after use */
-    GString *str_buf = g_string_new("");
+    g_autoptr(GString) str_buf = g_string_new(NULL);
 
-    printf("qMemTag received!\n");
-    printf("addr = %lx\n", addr);
-    printf("length = %lx\n", len);
-    printf("type = %x\n", type);
+    /*
+     * GDB does not query tags for a memory range on remote targets, so that's
+     * not supported either by gdbstub.
+     */
+    if (len != 1) {
+        gdb_put_packet("E02");
+    }
 
-    uint64_t clean_ptr = useronly_clean_ptr(addr);
-    printf("Clean addr = %lx\n", clean_ptr);
+    /*
+     * GDB never queries a tag different from an allocation tag (type 1).
+     */
+    if (type != 1) {
+        gdb_put_packet("E02");
+    }
 
-    mflags = page_get_flags(addr);
+    /* Remove any non-addressing bits. */
+    clean_addr = useronly_clean_ptr(addr);
 
-    tags = page_get_target_data(clean_ptr);
-    index = extract32(addr, LOG2_TAG_GRANULE + 1, TARGET_PAGE_BITS - LOG2_TAG_GRANULE - 1);
+    tags = page_get_target_data(clean_addr);
+    /*
+     * 2 tags (4 bits each) are kept in a single byte for compactness, so first
+     * the index for 2 packed granule tags is found for the page tags, and then
+     * the correct index for a single granule tag is found and used to obtain
+     * the address tag from the nibble.
+     */
+    granules_index = extract32(clean_addr, LOG2_TAG_GRANULE + 1,
+                                   TARGET_PAGE_BITS - LOG2_TAG_GRANULE - 1);
+    granule_index = extract32(clean_addr, LOG2_TAG_GRANULE, 1);
 
-    printf("mflags = %x\n", mflags);
+    addr_tag = *(tags + granules_index);
+    /* Extract tag from the nibble. */
+    if (granule_index == 0) {
+        addr_tag &= 0xF;
+    } else {
+        addr_tag >>= 4;
+    }
 
-    printf("index = %lx\n", index);
-    printf("tags = %.2x\n",  *(tags + index));
-
-    g_string_printf(str_buf, "m%.2x", *(tags + index));
-
-    // g_string_printf(str_buf, "m0j");
-
-    // TODO(gromer0): use gdb_put_buf instead!
-    gdb_send_packet_data(str_buf->str);
+    g_string_printf(str_buf, "m%.2x", addr_tag);
+    gdb_put_packet(str_buf->str);
 }
 
 // $qMemTagAddrCheck:400000802000:#c7
@@ -581,7 +598,7 @@ static void xxx_check_memtag_addr(GArray *params, void *user_ctx)
         // g_string_printf(str_buf, "%s", n);
     }
 
-    gdb_send_packet_data(str_buf->str);
+    gdb_put_packet(str_buf->str);
 }
 
 static void xxx_set_mem_tag(GArray *params, void *user_ctx)
@@ -614,7 +631,7 @@ static void xxx_set_mem_tag(GArray *params, void *user_ctx)
     printf("Setting tag %.2d\n", *(tags + index));
 
     g_string_printf(str_buf, "OK");
-    gdb_send_packet_data(str_buf->str);
+    gdb_put_packet(str_buf->str);
 }
 
 enum Packet {

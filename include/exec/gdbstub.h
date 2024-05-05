@@ -185,6 +185,10 @@ void set_gdb_gen_set_table_arch(GdbCmdParseEntry *, int size);
  */
 void set_query_supported_arch(char *);
 
-void gdb_send_packet_data(const char *response);
+/**
+ * gdb_put_packet() - put string into gdb server's buffer so it is sent
+ * to the client
+ */
+int gdb_put_packet(const char *buf);
 
 #endif /* GDBSTUB_H */
