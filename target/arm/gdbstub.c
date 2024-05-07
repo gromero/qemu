@@ -565,6 +565,7 @@ static void xxx_get_mem_tag(GArray *params, void *user_ctx)
                                TARGET_PAGE_BITS - LOG2_TAG_GRANULE - 1);
     granule_index = extract32(clean_addr, LOG2_TAG_GRANULE, 1);
 
+    printf("granules_index = %d\n", granules_index);
     addr_tag = *(tags + granules_index);
     /* Extract tag from the nibble. */
     if (granule_index == 0) {
@@ -602,34 +603,83 @@ static void xxx_check_memtag_addr(GArray *params, void *user_ctx)
     gdb_put_packet(str_buf->str);
 }
 
+
+static void update_tag(int tag_index, uint8_t tag, uint8_t *tags)
+{
+    int byte_index;
+    int nibble_index;
+
+    byte_index = tag_index / 2;
+    nibble_index = tag_index % 2;
+
+    if (nibble_index == 0) { /* Low nibble */
+        *(tags + byte_index) &= 0xF0;
+        *(tags + byte_index) |= (tag & 0x0F);
+    } else { /* High nibble */
+        *(tags + byte_index) &= 0x0F;
+        *(tags + byte_index) |= ((tag & 0x0F) << 4);
+    }
+}
+
 // ‘QMemTags:start address,length:type:tag bytes’
 static void xxx_set_mem_tag(GArray *params, void *user_ctx)
 {
     uint64_t addr = get_param(params, 0)->val_ull;
     uint64_t len = get_param(params, 1)->val_ul;
     int type = get_param(params, 2)->val_ul;
-    char const *tag_bytes = get_param(params, 3)->data;
+    char const *new_tags = get_param(params, 3)->data;
+
+    uint64_t clean_addr;
+    uint8_t *tags;
 
     g_autoptr(GString) str_buf = g_string_new(NULL);
 
+    /*
+     * Only the allocation tag (type 1) can be set at the stub side.
+     */
+    if (type != 1) {
+        gdb_put_packet("E02");
+    }
+
     printf("QMemTag received!\n");
     printf("addr = %lx\n", addr);
-    printf("length = %ld\n", len);
+    printf("len  = %ld\n", len);
     printf("type = %x\n", type);
-    printf("tag bytes = %s\n", tag_bytes);
+    printf("tags = %s\n", new_tags);
+    printf("target page size = %d\n", TARGET_PAGE_SIZE);
 
-    uintptr_t index;
-    uint8_t *tags;
-    uint64_t clean_ptr = useronly_clean_ptr(addr);
+    clean_addr = useronly_clean_ptr(addr);
+    printf("Clean addr = %lx\n", clean_addr);
 
-    printf("Clean addr = %lx\n", clean_ptr);
-    tags = page_get_target_data(clean_ptr);
-    index = extract32(addr, LOG2_TAG_GRANULE + 1, TARGET_PAGE_BITS - LOG2_TAG_GRANULE - 1);
+    tags = page_get_target_data(clean_addr);
 
-    uint8_t tag = 0xF & atoi(tag_bytes); /* TODO: Support multiple tags */
-    *(tags + index) = tag; /* XXX: FIXME for two tags */
+    int last_addr_index = len - 1;
 
-    printf("Setting tag %.2d\n", *(tags + index));
+    // FIXME(gromero): Correctly check page boundaries
+    /* Check if memory to be set is within page boundary. */
+    if (clean_addr + last_addr_index >= clean_addr + TARGET_PAGE_SIZE) {
+        gdb_put_packet("E02");
+    }
+
+    int first_tag_index = extract32(clean_addr, LOG2_TAG_GRANULE,
+                              TARGET_PAGE_BITS - LOG2_TAG_GRANULE);
+    int last_tag_index = extract32(clean_addr + last_addr_index, LOG2_TAG_GRANULE,
+                              TARGET_PAGE_BITS - LOG2_TAG_GRANULE);
+
+    printf("first_tag_index = %d\n", first_tag_index);
+    printf("last_tag_index  = %d\n", last_tag_index);
+
+    int new_tags_size = strlen(new_tags) / 2; /* 2 hex digits per tag number */
+
+    printf("new_tags_size = %d\n", new_tags_size);
+
+    for (int i = first_tag_index, j = 0; i <= last_tag_index; i++, j++) {
+        int new_tag_value;
+        sscanf(new_tags + 2 * (j % new_tags_size), "%2x", &new_tag_value);
+        printf("Updating packed granules at index %d to %d... ", i, new_tag_value);
+        update_tag(i, new_tag_value, tags);
+        printf("done!\n");
+    }
 
     g_string_printf(str_buf, "OK");
 
