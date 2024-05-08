@@ -544,9 +544,7 @@ static void xxx_get_mem_tag(GArray *params, void *user_ctx)
         gdb_put_packet("E02");
     }
 
-    /*
-     * GDB never queries a tag different from an allocation tag (type 1).
-     */
+    /* GDB never queries a tag different from an allocation tag (type 1). */
     if (type != 1) {
         gdb_put_packet("E02");
     }
@@ -554,12 +552,17 @@ static void xxx_get_mem_tag(GArray *params, void *user_ctx)
     /* Remove any non-addressing bits. */
     clean_addr = useronly_clean_ptr(addr);
 
+    /*
+     * Get pointer to all tags in the page where the address is. NB: tags are
+     * packed, so there are 2 tags packed in one byte.
+     */
     tags = page_get_target_data(clean_addr);
+
     /*
      * Tags are per granule (16 bytes). 2 tags (4 bits each) are kept in a
      * single byte for compactness, so first a page tag index for 2 packed
      * granule tags (1 byte) is found, and then an index for a single granule
-     * tag (nibble) is found, and finally used to obtain the address tag.
+     * tag (nibble) is found, and finally the address tag is obtained.
      */
     granules_index = extract32(clean_addr, LOG2_TAG_GRANULE + 1,
                                TARGET_PAGE_BITS - LOG2_TAG_GRANULE - 1);
@@ -567,7 +570,7 @@ static void xxx_get_mem_tag(GArray *params, void *user_ctx)
 
     printf("granules_index = %d\n", granules_index);
     addr_tag = *(tags + granules_index);
-    /* Extract tag from the nibble. */
+    /* Extract tag from the right nibble. */
     if (granule_index == 0) {
         addr_tag &= 0xF;
     } else {
@@ -603,25 +606,6 @@ static void xxx_check_memtag_addr(GArray *params, void *user_ctx)
     gdb_put_packet(str_buf->str);
 }
 
-
-static void update_tag(int tag_index, uint8_t tag, uint8_t *tags)
-{
-    int byte_index;
-    int nibble_index;
-
-    byte_index = tag_index / 2;
-    nibble_index = tag_index % 2;
-
-    if (nibble_index == 0) { /* Low nibble */
-        *(tags + byte_index) &= 0xF0;
-        *(tags + byte_index) |= (tag & 0x0F);
-    } else { /* High nibble */
-        *(tags + byte_index) &= 0x0F;
-        *(tags + byte_index) |= ((tag & 0x0F) << 4);
-    }
-}
-
-// ‘QMemTags:start address,length:type:tag bytes’
 static void xxx_set_mem_tag(GArray *params, void *user_ctx)
 {
     uint64_t addr = get_param(params, 0)->val_ull;
@@ -630,7 +614,16 @@ static void xxx_set_mem_tag(GArray *params, void *user_ctx)
     char const *new_tags = get_param(params, 3)->data;
 
     uint64_t clean_addr;
-    uint8_t *tags;
+    int last_addr_index;
+
+    uint64_t start_addr_page;
+    uint64_t end_addr_page;
+
+    uint32_t first_tag_index;
+    uint32_t last_tag_index;
+
+    uint8_t *tags; /* Pointer to the current tags in a page. */
+    int num_new_tags;
 
     g_autoptr(GString) str_buf = g_string_new(NULL);
 
@@ -639,6 +632,35 @@ static void xxx_set_mem_tag(GArray *params, void *user_ctx)
      */
     if (type != 1) {
         gdb_put_packet("E02");
+        return;
+    }
+
+    /*
+     * 'len' is always >= 1 and refers to the size of the memory range about to
+     * have its tags updated. However, it's convenient to obtain the index for the
+     * last byte of the memory range for page boundary checks and for obtaining
+     * the indexes for the tags in the page.
+     */
+    last_addr_index = len - 1;
+
+    /* Remove any non-addressing bits. */
+    clean_addr = useronly_clean_ptr(addr);
+    printf("Clean addr = %lx\n", clean_addr);
+
+    start_addr_page = extract64(clean_addr, TARGET_PAGE_BITS,
+                                64 - TARGET_PAGE_BITS);
+    end_addr_page = extract64(clean_addr + last_addr_index, TARGET_PAGE_BITS,
+                              64 - TARGET_PAGE_BITS);
+
+    printf("start page = %ld\n", start_addr_page);
+    printf("end_page   = %ld\n", end_addr_page);
+
+    /*
+     * Check if memory range is within page boundaries.
+     */
+    if (start_addr_page != end_addr_page) {
+        gdb_put_packet("E03");
+        return;
     }
 
     printf("QMemTag received!\n");
@@ -648,36 +670,59 @@ static void xxx_set_mem_tag(GArray *params, void *user_ctx)
     printf("tags = %s\n", new_tags);
     printf("target page size = %d\n", TARGET_PAGE_SIZE);
 
-    clean_addr = useronly_clean_ptr(addr);
-    printf("Clean addr = %lx\n", clean_addr);
-
+    /*
+     * Get pointer to all tags in the page where the address is. NB: here tags
+     * are packed, so there are 2 tags packed in one byte.
+     */
     tags = page_get_target_data(clean_addr);
 
-    int last_addr_index = len - 1;
-
-    // FIXME(gromero): Correctly check page boundaries
-    /* Check if memory to be set is within page boundary. */
-    if (clean_addr + last_addr_index >= clean_addr + TARGET_PAGE_SIZE) {
-        gdb_put_packet("E02");
-    }
-
-    int first_tag_index = extract32(clean_addr, LOG2_TAG_GRANULE,
-                              TARGET_PAGE_BITS - LOG2_TAG_GRANULE);
-    int last_tag_index = extract32(clean_addr + last_addr_index, LOG2_TAG_GRANULE,
-                              TARGET_PAGE_BITS - LOG2_TAG_GRANULE);
+    /* NB: tag indices below refer to unpacked tags. */
+    first_tag_index = extract32(clean_addr, LOG2_TAG_GRANULE,
+                                TARGET_PAGE_BITS - LOG2_TAG_GRANULE);
+    last_tag_index = extract32(clean_addr + last_addr_index, LOG2_TAG_GRANULE,
+                               TARGET_PAGE_BITS - LOG2_TAG_GRANULE);
 
     printf("first_tag_index = %d\n", first_tag_index);
     printf("last_tag_index  = %d\n", last_tag_index);
 
-    int new_tags_size = strlen(new_tags) / 2; /* 2 hex digits per tag number */
+    /*
+     * GDB sends 2 hex digits per tag number, i.e. tags are not represented in
+     * a packed way.
+     */
+    num_new_tags = strlen(new_tags) / 2;
 
-    printf("new_tags_size = %d\n", new_tags_size);
+    printf("num_new_tags = %d\n", num_new_tags);
 
+    /*
+     * If the number of tags provided is greater than the number of tags
+     * in the provided memory range, the exceeding tags are ignored. If the
+     * number of tags is less than the number of tags in the provided memory
+     * range, then the provided tags are used as a repeating pattern to fill
+     * the tags in the provided memory range.
+     */
     for (int i = first_tag_index, j = 0; i <= last_tag_index; i++, j++) {
         int new_tag_value;
-        sscanf(new_tags + 2 * (j % new_tags_size), "%2x", &new_tag_value);
+        int packed_granules_index;
+        int nibble_index;
+
+        sscanf(new_tags + 2 * (j % num_new_tags), "%2x", &new_tag_value);
         printf("Updating packed granules at index %d to %d... ", i, new_tag_value);
-        update_tag(i, new_tag_value, tags);
+        /*
+         * Find packed tag index from unpacked tag index. There are two tags
+         * packed in one packed index. One tag per nibble.
+         */
+        packed_granules_index = i / 2;
+        /* Find nibble index in the packed tag from unpacked tag index. */
+        nibble_index = i % 2;
+
+        if (nibble_index == 0) { /* Update low nibble */
+            *(tags + packed_granules_index) &= 0xF0;
+            *(tags + packed_granules_index) |= (new_tag_value & 0x0F);
+        } else { /* Update high nibble */
+            *(tags + packed_granules_index) &= 0x0F;
+            *(tags + packed_granules_index) |= ((new_tag_value & 0x0F) << 4);
+        }
+
         printf("done!\n");
     }
 
