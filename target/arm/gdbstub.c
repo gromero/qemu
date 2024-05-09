@@ -475,54 +475,48 @@ const char *arm_gdb_get_dynamic_xml(CPUState *cs, const char *xmlname)
     return NULL;
 }
 
-int aarch64_gdb_get_mte_reg(CPUARMState *env, struct _GByteArray * buf, int reg);
-int aarch64_gdb_get_mte_reg(CPUARMState *env, struct _GByteArray * buf, int reg)
+static int aarch64_gdb_get_tag_ctl_reg(CPUARMState *env, struct _GByteArray *buf, int reg)
 {
-    printf("aarch64_gdb_get_mte_reg() called!\n");
-    printf("buf->len = %d\n", buf->len);
-    int mmu_idx = cpu_mmu_index(env, false);
-    printf("mmu_idx = %d\n", mmu_idx);
-    // uint8_t * mem;
+    uint64_t tcf0;
 
-    uint32_t r = 0xbeef;
-    // mem = allocation_tag_mem(env, mmu_idx, 0x300, MMU_DATA_LOAD, TAG_GRANULE, MMU_DATA_LOAD, 0);
+    assert(reg == 0);
 
-    // printf("mem = %p\n", mem);
+    /* TCF0, bits [39:38]. */
+    tcf0 = extract64(env->cp15.sctlr_el[1], 38, 2);
 
-    int f =  page_get_flags(0x200);
-    printf("f = %d\n", f);
-
-    return gdb_get_reg32(buf, r);
-    return 0;
+    return gdb_get_reg64(buf, tcf0);
 }
 
-int aarch64_gdb_set_mte_reg(CPUARMState *env, uint8_t *, int reg);
-int aarch64_gdb_set_mte_reg(CPUARMState *env, uint8_t *b, int reg)
+static int aarch64_gdb_set_tag_ctl_reg(CPUARMState *env, uint8_t *buf, int reg)
 {
-   uint64_t *ptr;
-   int mflags;
-   uintptr_t index;
-   uint8_t *tags;
-   ptr = (uint64_t *)b;
+   ARMCPU *cpu = env_archcpu(env);
 
-   printf("aarch64_gdb_set_mte_reg() called!\n");
+   assert(reg == 0);
 
-   uint64_t clean_ptr = useronly_clean_ptr(*ptr);
-   printf("Address ptr  = %lx\n", *ptr);
+   /* Sanitize TCF0 bits. */
+   *buf &= 0x03;
 
-   mflags = page_get_flags(*ptr);
-   printf("mflags = %x\n", mflags);
+   if (!isar_feature_aa64_mte3(&cpu->isar) && *buf == 3) {
+       /*
+        * If FEAT_MTE3 is not implemented, the value 0b11 is reserved, hence
+        * ignore setting it.
+        */
+       return 0;
+   }
 
-   tags = page_get_target_data(clean_ptr);
+    /*
+     * 'tag_ctl' register is actually a "pseudo-register" provided by GDB to
+     * expose options that can be controlled at runtime and has the same effect
+     * of prctl() with option PR_SET_TAGGED_ADDR_CTRL,
+     * i.e. prctl(PR_SET_TAGGED_ADDR_CTRL, tcf, 0, 0, 0), hence it controls
+     * the effect of Tag Check Faults (TCF) due to Loads and Stores in EL0.
+     */
+    env->cp15.sctlr_el[1] = deposit64(env->cp15.sctlr_el[1], 38, 2, *buf);
 
-   index = extract32(*ptr, LOG2_TAG_GRANULE + 1, TARGET_PAGE_BITS - LOG2_TAG_GRANULE - 1);
-   printf("index = %lx\n", index);
-   printf("tags = %x\n",  *(tags + index));
-
-  return 0;
+    return 1;
 }
 
-static void xxx_get_mem_tag(GArray *params, void *user_ctx)
+static void handle_q_memtag(GArray *params, G_GNUC_UNUSED void *user_ctx)
 {
     uint64_t addr = get_param(params, 0)->val_ull;
     uint64_t len = get_param(params, 1)->val_ul;
@@ -581,7 +575,7 @@ static void xxx_get_mem_tag(GArray *params, void *user_ctx)
     gdb_put_packet(str_buf->str);
 }
 
-static void xxx_check_memtag_addr(GArray *params, void *user_ctx)
+static void handle_q_isaddresstagged(GArray *params, G_GNUC_UNUSED void *user_ctx)
 {
     uint64_t addr = get_param(params, 0)->val_ull;
 
@@ -605,7 +599,7 @@ static void xxx_check_memtag_addr(GArray *params, void *user_ctx)
     gdb_put_packet(str_buf->str);
 }
 
-static void xxx_set_mem_tag(GArray *params, void *user_ctx)
+static void handle_Q_memtag(GArray *params, G_GNUC_UNUSED void *user_ctx)
 {
     uint64_t addr = get_param(params, 0)->val_ull;
     uint64_t len = get_param(params, 1)->val_ul;
@@ -720,19 +714,19 @@ enum Packet {
 
 static GdbCmdParseEntry packet_handler_table[NUM_PACKETS] = {
     [qMemTags] = {
-        .handler = xxx_get_mem_tag,
+        .handler = handle_q_memtag,
         .cmd_startswith = 1,
         .cmd = "MemTags:",
         .schema = "L,l:l0"
     },
     [qIsAddressTagged] = {
-        .handler = xxx_check_memtag_addr,
+        .handler = handle_q_isaddresstagged,
         .cmd_startswith = 1,
         .cmd = "IsAddressTagged:",
         .schema = "L0"
     },
     [QMemTags] = {
-        .handler = xxx_set_mem_tag,
+        .handler = handle_Q_memtag,
         .cmd_startswith = 1,
         .cmd = "MemTags:",
         .schema = "L,l:l:s0"
@@ -812,8 +806,8 @@ void arm_cpu_register_gdb_regs_for_features(ARMCPU *cpu)
 
         /* Memory Tagging Extension (MTE) 'tag_ctl' register. */
         if (isar_feature_aa64_mte(&cpu->isar)) {
-            gdb_register_coprocessor(cs, aarch64_gdb_get_mte_reg,
-                                     aarch64_gdb_set_mte_reg,
+            gdb_register_coprocessor(cs, aarch64_gdb_get_tag_ctl_reg,
+                                     aarch64_gdb_set_tag_ctl_reg,
                                      1, "aarch64-mte.xml", 0);
         }
 #endif
