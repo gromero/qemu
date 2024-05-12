@@ -1109,6 +1109,13 @@ if test -n "$gdb_bin"; then
     else
         gdb_bin=""
     fi
+
+    # Does GDB support MTE (Memory Tagging Extension)?
+    if version_ge ${gdb_version##* } 15.0; then
+        gdb_has_mte="yes"
+    else
+        gdb_has_mte="no"
+    fi
 fi
 
 ##########################################
@@ -1637,6 +1644,10 @@ echo "SRC_PATH=$source_path" >> tests/tcg/$config_host_mak
 if test "$plugins" = "yes" ; then
     echo "CONFIG_PLUGIN=y" >> tests/tcg/$config_host_mak
 fi
+if test "$gdb_has_mte" = "yes" ; then
+    echo "GDB_HAS_MTE=y" >> tests/tcg/$config_host_mak
+fi
+
 
 tcg_tests_targets=
 for target in $target_list; do
