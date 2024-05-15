@@ -21,10 +21,13 @@
 #include "cpu.h"
 #include "exec/gdbstub.h"
 #include "gdbstub/helpers.h"
+#include "gdbstub/commands.h"
 #include "sysemu/tcg.h"
 #include "internals.h"
 #include "cpu-features.h"
 #include "cpregs.h"
+#include "mte.h"
+#include "tcg/mte_helper.h"
 
 typedef struct RegisterSysregFeatureParam {
     CPUState *cs;
@@ -474,6 +477,253 @@ static GDBFeature *arm_gen_dynamic_m_secextreg_feature(CPUState *cs,
 #endif
 #endif /* CONFIG_TCG */
 
+#ifdef TARGET_AARCH64
+#ifdef CONFIG_USER_ONLY
+static int aarch64_gdb_get_tag_ctl_reg(CPUState *cs, struct _GByteArray *buf, int reg)
+{
+    ARMCPU *cpu = ARM_CPU(cs);
+    CPUARMState *env = &cpu->env;
+    uint64_t tcf0;
+
+    assert(reg == 0);
+
+    tcf0 = extract64(env->cp15.sctlr_el[1], 38, 2);
+
+    return gdb_get_reg64(buf, tcf0);
+}
+
+static int aarch64_gdb_set_tag_ctl_reg(CPUState *cs, uint8_t *buf, int reg)
+{
+    ARMCPU *cpu = ARM_CPU(cs);
+    CPUARMState *env = &cpu->env;
+
+    uint8_t tcf;
+
+    assert(reg == 0);
+
+    tcf = *buf << PR_MTE_TCF_SHIFT;
+
+    if (!tcf) {
+        return 0;
+    }
+
+    /*
+     * 'tag_ctl' register is actually a "pseudo-register" provided by GDB to
+     * expose options regarding the type of MTE fault that can be controlled at
+     * runtime and has the same effect of prctl() with option
+     * PR_SET_TAGGED_ADDR_CTRL.
+     */
+    set_mte_tcf0(env, tcf);
+
+    return 1;
+}
+
+static void handle_q_memtag(GArray *params, G_GNUC_UNUSED void *user_ctx)
+{
+    ARMCPU *cpu = ARM_CPU(gdb_first_attached_cpu());
+    CPUARMState *env = &cpu->env;
+
+    uint64_t addr = gdb_get_cmd_param(params, 0)->val_ull;
+    uint64_t len = gdb_get_cmd_param(params, 1)->val_ul;
+    int type = gdb_get_cmd_param(params, 2)->val_ul;
+
+    uint8_t *tags;
+    uint8_t addr_tag;
+
+    g_autoptr(GString) str_buf = g_string_new(NULL);
+
+    /*
+     * GDB does not query multiple tags for a memory range on remote targets, so
+     * that's not supported either by gdbstub.
+     */
+    if (len != 1) {
+        gdb_put_packet("E02");
+    }
+
+    /* GDB never queries a tag different from an allocation tag (type 1). */
+    if (type != 1) {
+        gdb_put_packet("E03");
+    }
+
+    /* Note that tags are packed here (2 tags packed in one byte). */
+    tags = allocation_tag_mem_probe(env, 0, addr, MMU_DATA_LOAD, 8 /* 64-bit */,
+                                    MMU_DATA_LOAD, true, 0);
+    if (!tags) {
+        /* Address is not in a tagged region. */
+        gdb_put_packet("E04");
+        return;
+    }
+
+    /* Unpack tag from byte. */
+    addr_tag = load_tag1(addr, tags);
+    g_string_printf(str_buf, "m%.2x", addr_tag);
+
+    gdb_put_packet(str_buf->str);
+}
+
+static void handle_q_isaddresstagged(GArray *params, G_GNUC_UNUSED void *user_ctx)
+{
+    ARMCPU *cpu = ARM_CPU(gdb_first_attached_cpu());
+    CPUARMState *env = &cpu->env;
+
+    uint64_t addr = gdb_get_cmd_param(params, 0)->val_ull;
+
+    uint8_t *tags;
+    const char *reply;
+
+    tags = allocation_tag_mem_probe(env, 0, addr, MMU_DATA_LOAD, 8 /* 64-bit */,
+                                    MMU_DATA_LOAD, true, 0);
+    reply = tags ? "01" : "00";
+
+    gdb_put_packet(reply);
+}
+
+static void handle_Q_memtag(GArray *params, G_GNUC_UNUSED void *user_ctx)
+{
+    ARMCPU *cpu = ARM_CPU(gdb_first_attached_cpu());
+    CPUARMState *env = &cpu->env;
+
+    uint64_t start_addr = gdb_get_cmd_param(params, 0)->val_ull;
+    uint64_t len = gdb_get_cmd_param(params, 1)->val_ul;
+    int type = gdb_get_cmd_param(params, 2)->val_ul;
+    char const *new_tags_str = gdb_get_cmd_param(params, 3)->data;
+
+    uint64_t end_addr;
+
+    int num_new_tags;
+    uint8_t *tags;
+
+    g_autoptr(GByteArray) new_tags = g_byte_array_new();
+
+    /*
+     * Only the allocation tag (i.e. type 1) can be set at the stub side.
+     */
+    if (type != 1) {
+        gdb_put_packet("E02");
+        return;
+    }
+
+    end_addr = start_addr + (len - 1); /* 'len' is always >= 1 */
+    /* Check if request's memory range does not cross page boundaries. */
+    if ((start_addr ^ end_addr) & TARGET_PAGE_MASK) {
+        gdb_put_packet("E03");
+        return;
+    }
+
+    /*
+     * Get all tags in the page starting from the tag of the start address.
+     * Note that there are two tags packed into a single byte here.
+     */
+    tags = allocation_tag_mem_probe(env, 0, start_addr, MMU_DATA_STORE,
+                                    8 /* 64-bit */, MMU_DATA_STORE, true, 0);
+    if (!tags) {
+        /* Address is not in a tagged region. */
+        gdb_put_packet("E04");
+        return;
+    }
+
+    /* Convert tags provided by GDB, 2 hex digits per tag. */
+    num_new_tags = strlen(new_tags_str) / 2;
+    gdb_hextomem(new_tags, new_tags_str, num_new_tags);
+
+    uint64_t address = start_addr;
+    int new_tag_index = 0;
+    while (address <= end_addr) {
+        uint8_t new_tag;
+        int packed_index;
+
+        /*
+         * Find packed tag index from unpacked tag index. There are two tags
+         * in one packed index (one tag per nibble).
+         */
+        packed_index = new_tag_index / 2;
+
+        new_tag = new_tags->data[new_tag_index % num_new_tags];
+        store_tag1(address, tags + packed_index, new_tag);
+
+        address += TAG_GRANULE;
+        new_tag_index++;
+    }
+
+    gdb_put_packet("OK");
+}
+
+enum Packet {
+    qMemTags,
+    qIsAddressTagged,
+    QMemTags,
+    NUM_PACKETS
+};
+
+static GdbCmdParseEntry packet_handler_table[NUM_PACKETS] = {
+    [qMemTags] = {
+        .handler = handle_q_memtag,
+        .cmd_startswith = 1,
+        .cmd = "MemTags:",
+        .schema = "L,l:l0"
+    },
+    [qIsAddressTagged] = {
+        .handler = handle_q_isaddresstagged,
+        .cmd_startswith = 1,
+        .cmd = "IsAddressTagged:",
+        .schema = "L0"
+    },
+    [QMemTags] = {
+        .handler = handle_Q_memtag,
+        .cmd_startswith = 1,
+        .cmd = "MemTags:",
+        .schema = "L,l:l:s0"
+    },
+};
+
+static void add_packet_handler(GArray *handlers, enum Packet packet) {
+    g_array_append_val(handlers, packet_handler_table[packet]);
+}
+#endif /* CONFIG_USER_ONLY */
+#endif /* TARGET_AARCH64 */
+
+void arm_cpu_register_gdb_commands(ARMCPU *cpu)
+{
+    GArray *gdb_gen_query_table_arm =
+        g_array_new(FALSE, FALSE, sizeof(GdbCmdParseEntry));
+    GArray *gdb_gen_set_table_arm =
+        g_array_new(FALSE, FALSE, sizeof(GdbCmdParseEntry));
+    GString *supported_features = g_string_new(NULL);
+
+#ifdef TARGET_AARCH64
+#ifdef CONFIG_USER_ONLY
+    /* MTE */
+    if (isar_feature_aa64_mte(&cpu->isar)) {
+        g_string_append(supported_features, ";memory-tagging+");
+
+        add_packet_handler(gdb_gen_query_table_arm, qMemTags);
+        add_packet_handler(gdb_gen_query_table_arm, qIsAddressTagged);
+
+        add_packet_handler(gdb_gen_set_table_arm, QMemTags);
+    }
+#endif
+#endif
+
+    /* Set arch-specific handlers for 'q' commands. */
+    if (gdb_gen_query_table_arm->len) {
+        gdb_extend_query_table(&g_array_index(gdb_gen_query_table_arm,
+                                              GdbCmdParseEntry, 0),
+                                              gdb_gen_query_table_arm->len);
+    }
+
+    /* Set arch-specific handlers for 'Q' commands. */
+    if (gdb_gen_set_table_arm->len) {
+        gdb_extend_set_table(&g_array_index(gdb_gen_set_table_arm,
+                             GdbCmdParseEntry, 0),
+                             gdb_gen_set_table_arm->len);
+    }
+
+    /* Set arch-specific qSupported feature. */
+    if (supported_features->len) {
+        gdb_extend_qsupported_features(supported_features->str);
+    }
+}
+
 void arm_cpu_register_gdb_regs_for_features(ARMCPU *cpu)
 {
     CPUState *cs = CPU(cpu);
@@ -507,6 +757,16 @@ void arm_cpu_register_gdb_regs_for_features(ARMCPU *cpu)
                                      gdb_find_static_feature("aarch64-pauth.xml"),
                                      0);
         }
+
+#ifdef CONFIG_USER_ONLY
+        /* Memory Tagging Extension (MTE) 'tag_ctl' register. */
+        if (isar_feature_aa64_mte(&cpu->isar)) {
+            gdb_register_coprocessor(cs, aarch64_gdb_get_tag_ctl_reg,
+                                     aarch64_gdb_set_tag_ctl_reg,
+                                     gdb_find_static_feature("aarch64-mte.xml"),
+                                     0);
+        }
+#endif
 #endif
     } else {
         if (arm_feature(env, ARM_FEATURE_NEON)) {
