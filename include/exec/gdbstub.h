@@ -228,4 +228,8 @@ void set_query_supported_arch(char *);
  */
 int gdb_put_packet(const char *buf);
 
+CPUState *gdb_first_attached_cpu(void);
+void gdb_memtohex(GString *buf, const uint8_t *mem, int len);
+void gdb_hextomem(GByteArray *mem, const char *buf, int len);
+
 #endif /* GDBSTUB_H */

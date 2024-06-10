@@ -20,11 +20,13 @@
 #include "qemu/osdep.h"
 #include "cpu.h"
 #include "exec/gdbstub.h"
+#include "mte.h"
 #include "gdbstub/helpers.h"
 #include "sysemu/tcg.h"
 #include "internals.h"
 #include "cpu-features.h"
 #include "cpregs.h"
+#include "tcg/mte_helper.h"
 
 typedef struct RegisterSysregFeatureParam {
     CPUState *cs;
@@ -484,7 +486,6 @@ static int aarch64_gdb_get_tag_ctl_reg(CPUState *cs, struct _GByteArray *buf, in
 
     assert(reg == 0);
 
-    /* TCF0, bits [39:38]. */
     tcf0 = extract64(env->cp15.sctlr_el[1], 38, 2);
 
     return gdb_get_reg64(buf, tcf0);
@@ -495,48 +496,44 @@ static int aarch64_gdb_set_tag_ctl_reg(CPUState *cs, uint8_t *buf, int reg)
     ARMCPU *cpu = ARM_CPU(cs);
     CPUARMState *env = &cpu->env;
 
+    uint8_t tcf;
+
     assert(reg == 0);
 
-    /* Sanitize TCF0 bits. */
-    *buf &= 0x03;
+    tcf = *buf << PR_MTE_TCF_SHIFT;
 
-    if (!isar_feature_aa64_mte3(&cpu->isar) && *buf == 3) {
-        /*
-         * If FEAT_MTE3 is not implemented, the value 0b11 is reserved, hence
-         * ignore setting it.
-         */
+    if (!tcf) {
         return 0;
     }
 
     /*
      * 'tag_ctl' register is actually a "pseudo-register" provided by GDB to
-     * expose options that can be controlled at runtime and has the same effect
-     * of prctl() with option PR_SET_TAGGED_ADDR_CTRL,
-     * i.e. prctl(PR_SET_TAGGED_ADDR_CTRL, tcf, 0, 0, 0), hence it controls
-     * the effect of Tag Check Faults (TCF) due to Loads and Stores in EL0.
+     * expose options regarding the type of MTE fault that can be controlled at
+     * runtime and has the same effect of prctl() with option
+     * PR_SET_TAGGED_ADDR_CTRL.
      */
-    env->cp15.sctlr_el[1] = deposit64(env->cp15.sctlr_el[1], 38, 2, *buf);
+    set_mte_tcf0(env, tcf);
 
     return 1;
 }
 
 static void handle_q_memtag(GArray *params, G_GNUC_UNUSED void *user_ctx)
 {
+    ARMCPU *cpu = ARM_CPU(gdb_first_attached_cpu());
+    CPUARMState *env = &cpu->env;
+
     uint64_t addr = get_param(params, 0)->val_ull;
     uint64_t len = get_param(params, 1)->val_ul;
     int type = get_param(params, 2)->val_ul;
 
-    uint64_t clean_addr;
     uint8_t *tags;
-    int granules_index;
-    int granule_index;
     uint8_t addr_tag;
 
     g_autoptr(GString) str_buf = g_string_new(NULL);
 
     /*
-     * GDB does not query tags for a memory range on remote targets, so that's
-     * not supported either by gdbstub.
+     * GDB does not query multiple tags for a memory range on remote targets, so
+     * that's not supported either by gdbstub.
      */
     if (len != 1) {
         gdb_put_packet("E02");
@@ -544,36 +541,20 @@ static void handle_q_memtag(GArray *params, G_GNUC_UNUSED void *user_ctx)
 
     /* GDB never queries a tag different from an allocation tag (type 1). */
     if (type != 1) {
-        gdb_put_packet("E02");
+        gdb_put_packet("E03");
     }
 
-    /* Remove any non-addressing bits. */
-    clean_addr = useronly_clean_ptr(addr);
-
-    /*
-     * Get pointer to all tags in the page where the address is. Note that tags
-     * are packed, so there are 2 tags packed in one byte.
-     */
-    tags = page_get_target_data(clean_addr);
-
-    /*
-     * Tags are per granule (16 bytes). 2 tags (4 bits each) are kept in a
-     * single byte for compactness, so first a page tag index for 2 packed
-     * granule tags (1 byte) is found, and then an index for a single granule
-     * tag (nibble) is found, and finally the address tag is obtained.
-     */
-    granules_index = extract32(clean_addr, LOG2_TAG_GRANULE + 1,
-                               TARGET_PAGE_BITS - LOG2_TAG_GRANULE - 1);
-    granule_index = extract32(clean_addr, LOG2_TAG_GRANULE, 1);
-
-    addr_tag = *(tags + granules_index);
-    /* Extract tag from the right nibble. */
-    if (granule_index == 0) {
-        addr_tag &= 0xF;
-    } else {
-        addr_tag >>= 4;
+    /* Note that tags are packed here (2 tags packed in one byte). */
+    tags = allocation_tag_mem_probe(env, 0, addr, MMU_DATA_LOAD, 8 /* 64-bit */,
+                                    MMU_DATA_LOAD, true, 0);
+    if (!tags) {
+        /* Address is not in a tagged region. */
+        gdb_put_packet("E04");
+        return;
     }
 
+    /* Unpack tag from byte. */
+    addr_tag = load_tag1(addr, tags);
     g_string_printf(str_buf, "m%.2x", addr_tag);
 
     gdb_put_packet(str_buf->str);
@@ -581,132 +562,89 @@ static void handle_q_memtag(GArray *params, G_GNUC_UNUSED void *user_ctx)
 
 static void handle_q_isaddresstagged(GArray *params, G_GNUC_UNUSED void *user_ctx)
 {
+    ARMCPU *cpu = ARM_CPU(gdb_first_attached_cpu());
+    CPUARMState *env = &cpu->env;
+
     uint64_t addr = get_param(params, 0)->val_ull;
 
-    uint64_t clean_addr;
-    int mflags;
+    uint8_t *tags;
+    const char *reply;
 
-    g_autoptr(GString) str_buf = g_string_new(NULL);
+    tags = allocation_tag_mem_probe(env, 0, addr, MMU_DATA_LOAD, 8 /* 64-bit */,
+                                    MMU_DATA_LOAD, true, 0);
+    reply = tags ? "01" : "00";
 
-    /* Remove any non-addressing bits. */
-    clean_addr = useronly_clean_ptr(addr);
-
-    mflags = page_get_flags(clean_addr);
-    if (mflags & PAGE_ANON && mflags & PAGE_MTE) {
-        /* Address is tagged. */
-        g_string_printf(str_buf, "%.2x", 1 /* true */);
-    } else {
-        /* Address is not tagged. */
-        g_string_printf(str_buf, "%.2x", 0 /* false */);
-    }
-
-    gdb_put_packet(str_buf->str);
+    gdb_put_packet(reply);
 }
 
 static void handle_Q_memtag(GArray *params, G_GNUC_UNUSED void *user_ctx)
 {
-    uint64_t addr = get_param(params, 0)->val_ull;
+    ARMCPU *cpu = ARM_CPU(gdb_first_attached_cpu());
+    CPUARMState *env = &cpu->env;
+
+    uint64_t start_addr = get_param(params, 0)->val_ull;
     uint64_t len = get_param(params, 1)->val_ul;
     int type = get_param(params, 2)->val_ul;
-    char const *new_tags = get_param(params, 3)->data;
+    char const *new_tags_str = get_param(params, 3)->data;
 
-    uint64_t clean_addr;
-    int last_addr_index;
+    uint64_t end_addr;
 
-    uint64_t start_addr_page;
-    uint64_t end_addr_page;
-
-    uint32_t first_tag_index;
-    uint32_t last_tag_index;
-
-    uint8_t *tags; /* Pointer to the current tags in a page. */
     int num_new_tags;
+    uint8_t *tags;
 
-    g_autoptr(GString) str_buf = g_string_new(NULL);
+    g_autoptr(GByteArray) new_tags = g_byte_array_new();
 
     /*
-     * Only the allocation tag (type 1) can be set at the stub side.
+     * Only the allocation tag (i.e. type 1) can be set at the stub side.
      */
     if (type != 1) {
         gdb_put_packet("E02");
         return;
     }
 
-    /*
-     * 'len' is always >= 1 and refers to the size of the memory range about to
-     * have its tags updated. However, it's convenient to obtain the index for
-     * the last byte of the memory range for page boundary checks and for
-     * obtaining the indexes for the tags in the page.
-     */
-    last_addr_index = len - 1;
-
-    /* Remove any non-addressing bits. */
-    clean_addr = useronly_clean_ptr(addr);
-
-    start_addr_page = extract64(clean_addr, TARGET_PAGE_BITS,
-                                64 - TARGET_PAGE_BITS);
-    end_addr_page = extract64(clean_addr + last_addr_index, TARGET_PAGE_BITS,
-                              64 - TARGET_PAGE_BITS);
-
-    /*
-     * Check if memory range is within page boundaries.
-     */
-    if (start_addr_page != end_addr_page) {
+    end_addr = start_addr + (len - 1); /* 'len' is always >= 1 */
+    /* Check if request's memory range does not cross page boundaries. */
+    if ((start_addr ^ end_addr) & TARGET_PAGE_MASK) {
         gdb_put_packet("E03");
         return;
     }
 
     /*
-     * Get pointer to all tags in the page where the address is. Note that here
-     * tags are packed, so there are 2 tags packed in one byte.
+     * Get all tags in the page starting from the tag of the start address.
+     * Note that there are two tags packed into a single byte here.
      */
-    tags = page_get_target_data(clean_addr);
-
-    /* Tag indices below refer to unpacked tags. */
-    first_tag_index = extract32(clean_addr, LOG2_TAG_GRANULE,
-                                TARGET_PAGE_BITS - LOG2_TAG_GRANULE);
-    last_tag_index = extract32(clean_addr + last_addr_index, LOG2_TAG_GRANULE,
-                               TARGET_PAGE_BITS - LOG2_TAG_GRANULE);
-
-    /*
-     * GDB sends 2 hex digits per tag number, i.e. tags are not represented in
-     * a packed way.
-     */
-    num_new_tags = strlen(new_tags) / 2;
-
-    /*
-     * If the number of tags provided is greater than the number of tags
-     * in the provided memory range, the exceeding tags are ignored. If the
-     * number of tags is less than the number of tags in the provided memory
-     * range, then the provided tags are used as a repeating pattern to fill
-     * the tags in the provided memory range.
-     */
-    for (int i = first_tag_index, j = 0; i <= last_tag_index; i++, j++) {
-        int new_tag_value;
-        int packed_granules_index;
-        int nibble_index;
-
-        sscanf(new_tags + 2 * (j % num_new_tags), "%2x", &new_tag_value);
-        /*
-         * Find packed tag index from unpacked tag index. There are two tags
-         * packed in one packed index. One tag per nibble.
-         */
-        packed_granules_index = i / 2;
-        /* Find nibble index in the packed tag from unpacked tag index. */
-        nibble_index = i % 2;
-
-        if (nibble_index == 0) { /* Update low nibble */
-            *(tags + packed_granules_index) &= 0xF0;
-            *(tags + packed_granules_index) |= (new_tag_value & 0x0F);
-        } else { /* Update high nibble */
-            *(tags + packed_granules_index) &= 0x0F;
-            *(tags + packed_granules_index) |= ((new_tag_value & 0x0F) << 4);
-        }
+    tags = allocation_tag_mem_probe(env, 0, start_addr, MMU_DATA_STORE,
+                                    8 /* 64-bit */, MMU_DATA_STORE, true, 0);
+    if (!tags) {
+        /* Address is not in a tagged region. */
+        gdb_put_packet("E04");
+        return;
     }
 
-    g_string_printf(str_buf, "OK");
+    /* Convert tags provided by GDB, 2 hex digits per tag. */
+    num_new_tags = strlen(new_tags_str) / 2;
+    gdb_hextomem(new_tags, new_tags_str, num_new_tags);
 
-    gdb_put_packet(str_buf->str);
+    uint64_t address = start_addr;
+    int new_tag_index = 0;
+    while (address <= end_addr) {
+        uint8_t new_tag;
+        int packed_index;
+
+        /*
+         * Find packed tag index from unpacked tag index. There are two tags
+         * in one packed index (one tag per nibble).
+         */
+        packed_index = new_tag_index / 2;
+
+        new_tag = new_tags->data[new_tag_index % num_new_tags];
+        store_tag1(address, tags + packed_index, new_tag);
+
+        address += TAG_GRANULE;
+        new_tag_index++;
+    }
+
+    gdb_put_packet("OK");
 }
 
 enum Packet {
