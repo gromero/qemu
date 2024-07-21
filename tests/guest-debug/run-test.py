@@ -27,6 +27,7 @@ def get_args():
     parser.add_argument("--binary", help="Binary to debug",
                         required=True)
     parser.add_argument("--test", help="GDB test script")
+    parser.add_argument("--test-args", help="Arguments to GDB test script")
     parser.add_argument("--gdb", help="The gdb binary to use",
                         default=None)
     parser.add_argument("--gdb-args", help="Additional gdb arguments")
@@ -91,6 +92,9 @@ if __name__ == '__main__':
     gdb_cmd += " -ex 'target remote %s'" % (socket_name)
     # finally the test script itself
     if args.test:
+        if args.test_args:
+            test_args = args.test_args.replace(" ",";")
+            gdb_cmd += f" -ex 'py {test_args}'"
         gdb_cmd += " -x %s" % (args.test)
 
 
