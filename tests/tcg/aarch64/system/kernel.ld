@@ -18,6 +18,10 @@ SECTIONS
     .bss : {
         *(.bss)
     }
+    . = ALIGN(1 << 22);
+    .mte : {
+        *(.mte_page)
+    }
     /DISCARD/ : {
         *(.ARM.attributes)
     }

@@ -91,6 +91,9 @@ __start:
 	adr	x0, vector_table
 	msr	vbar_el1, x0
 
+	mrs x0, CurrentEL
+	adrp x0, mte_page_start
+
 	/* Page table setup (identity mapping). */
 	adrp	x0, ttb
 	add	x0, x0, :lo12:ttb
@@ -135,6 +138,17 @@ __start:
 	orr	x1, x1, x3
 	str	x1, [x2]			/* 2nd 2mb (.data & .bss)*/
 
+        /* Third block: .mte_page */
+	adrp	x1, .mte_page
+	add	x1, x1, :lo12:.mte_page
+	bic	x1, x1, #(1 << 21) - 1
+	and 	x4, x1, x5
+	add	x2, x0, x4, lsr #(21 - 3)
+	ldr	x3, =(3 << 53) | 0x401 | 1 << 2	// attr(AF, NX, block, Attr1 in MAIR_EL1)
+//	ldr	x3, =(3 << 53) | 0x401          // attr(AF, NX, block)
+	orr	x1, x1, x3
+	str	x1, [x2]
+
 	/* Setup/enable the MMU.  */
 
 	/*
@@ -155,13 +169,20 @@ __start:
 	ldr	x0, = (2 << 32) | 25 | (3 << 10) | (3 << 8)
 	msr	tcr_el1, x0
 
-	mov	x0, #0xee			/* Inner/outer cacheable WB */
+	mov	x0, #0xf0ee			/* Tagged Normal, Inner/outer cacheable WB */
 	msr	mair_el1, x0
+	isb
+
+	mrs	x0, tcr_el1
+	mov	x1, (1 << 37)
+	orr	x0, x0, x1
+	msr 	tcr_el1, x0
 	isb
 
 	/*
 	 * SCTLR_EL1 - System Control Register
 	 *
+	 * ATA[43] = 1 = enable access to allocation tags at EL1
 	 * WXN[19] = 0 = no effect, Write does not imply XN (execute never)
 	 * I[12] = Instruction cachability control
 	 * SA[3] = SP alignment check
@@ -169,7 +190,8 @@ __start:
 	 * M[0] = 1, enable stage 1 address translation for EL0/1
 	 */
 	mrs	x0, sctlr_el1
-	ldr	x1, =0x100d			/* bits I(12) SA(3) C(2) M(0) */
+	ldr	x1, =(0x100d | 1 << 43 | 1 << 40) // bits ATA(43) TCF(41:40) = MTE_SYNC I(12) SA(3) C(2) M(0)
+/*	ldr	x1, =0x100d			// bits I(12) SA(3) C(2) M(0) */
 	bic	x0, x0, #(1 << 1)		/* clear bit A(1) */
 	bic	x0, x0, #(1 << 19)		/* clear WXN */
 	orr	x0, x0, x1			/* set bits */
@@ -239,3 +261,7 @@ ttb_stage2:
 stack:
 	.space 65536, 0
 stack_end:
+
+	.section .mte_page
+mte_page_start:
+	.string "1 GB MTE page"
