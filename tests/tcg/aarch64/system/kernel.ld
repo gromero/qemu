@@ -18,6 +18,11 @@ SECTIONS
     .bss : {
         *(.bss)
     }
+    /* align MTE section to next (third) 2mb */
+    . = ALIGN(1 << 22);
+    .mte : {
+        *(.mte_page)
+    }
     /DISCARD/ : {
         *(.ARM.attributes)
     }
