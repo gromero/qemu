@@ -113,8 +113,10 @@ void build_ged_aml(Aml *table, const char *name, HotplugHandler *hotplug_dev,
                 break;
             case ACPI_GED_PWR_DOWN_EVT:
                 aml_append(if_ctx,
-                           aml_notify(aml_name(ACPI_POWER_BUTTON_DEVICE),
-                                      aml_int(0x80)));
+                           // aml_notify(aml_name(ACPI_POWER_BUTTON_DEVICE),
+                           /* Notify S00 device for Device Check. */
+                           aml_notify(aml_name("\\_SB.PCI0.S00"), aml_int(0x01)));
+                          // aml_call0("\\_SB.PCI0.PCNT"));
                 break;
             case ACPI_GED_NVDIMM_HOTPLUG_EVT:
                 aml_append(if_ctx,

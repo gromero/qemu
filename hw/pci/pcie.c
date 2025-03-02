@@ -30,6 +30,8 @@
 #include "qemu/range.h"
 #include "trace.h"
 
+#include "qemu/log.h"
+
 //#define DEBUG_PCIE
 #ifdef DEBUG_PCIE
 # define PCIE_DPRINTF(fmt, ...)                                         \
@@ -487,7 +489,9 @@ static void pcie_cap_slot_event(PCIDevice *dev, PCIExpressHotPlugEvent event)
                                    PCI_EXP_SLTSTA, event) == event) {
         return;
     }
-    hotplug_event_notify(dev);
+
+    qemu_log("PCIE hotplug event intercepted, please notify it manually!\n");
+    // hotplug_event_notify(dev);
 }
 
 static void pcie_cap_slot_plug_common(PCIDevice *hotplug_dev, DeviceState *dev,
