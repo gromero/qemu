@@ -1,4 +1,5 @@
 #include "qemu/osdep.h"
+#include "qemu/log.h"
 #include "hw/acpi/aml-build.h"
 #include "hw/pci-host/gpex.h"
 #include "hw/arm/virt.h"
@@ -6,6 +7,12 @@
 #include "hw/pci/pci_bridge.h"
 #include "hw/pci/pcie_host.h"
 #include "hw/acpi/cxl.h"
+#include "hw/acpi/pcihp.h"
+
+#include "qapi/qmp/qnum.h"
+#include "qom/qom-qobject.h"
+
+AcpiPciHpState s;
 
 static void acpi_dsdt_add_pci_route_table(Aml *dev, uint32_t irq,
                                           Aml *scope, uint8_t bus_num)
@@ -78,9 +85,9 @@ static void acpi_dsdt_add_pci_osc(Aml *dev)
 
     /*
      * Allow OS control for all 5 features:
-     * PCIeHotplug SHPCHotplug PME AER PCIeCapability.
+     * ~PCIeHotplug~ SHPCHotplug PME AER PCIeCapability.
      */
-    aml_append(ifctx, aml_and(aml_name("CTRL"), aml_int(0x1F),
+    aml_append(ifctx, aml_and(aml_name("CTRL"), aml_int(0x1E),
                               aml_name("CTRL")));
 
     ifctx1 = aml_if(aml_lnot(aml_equal(aml_arg(1), aml_int(0x1))));
@@ -94,6 +101,7 @@ static void acpi_dsdt_add_pci_osc(Aml *dev)
     aml_append(ifctx, ifctx1);
 
     aml_append(ifctx, aml_store(aml_name("CTRL"), aml_name("CDW3")));
+    aml_append(ifctx, aml_store(aml_int(0x1F), aml_name("CDW2")));
     aml_append(ifctx, aml_return(aml_arg(3)));
     aml_append(method, ifctx);
 
@@ -124,6 +132,102 @@ static void acpi_dsdt_add_pci_osc(Aml *dev)
     buf = aml_buffer(1, byte_list);
     aml_append(method, aml_return(buf));
     aml_append(dev, method);
+}
+
+static bool is_devfn_ignored_generic(const int devfn, const PCIBus *bus)
+{
+    const PCIDevice *pdev = bus->devices[devfn];
+
+    if (PCI_FUNC(devfn)) {
+        if (IS_PCI_BRIDGE(pdev)) {
+            /*
+             * Ignore only hotplugged PCI bridges on !0 functions, but
+             * allow describing cold plugged bridges on all functions
+             */
+            if (DEVICE(pdev)->hotplugged) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+static bool is_devfn_ignored_hotplug(const int devfn, const PCIBus *bus)
+{
+    PCIDevice *pdev = bus->devices[devfn];
+    if (pdev) {
+        return is_devfn_ignored_generic(devfn, bus) ||
+               !DEVICE_GET_CLASS(pdev)->hotpluggable ||
+               /* Cold plugged bridges aren't themselves hot-pluggable */
+               (IS_PCI_BRIDGE(pdev) && !DEVICE(pdev)->hotplugged);
+    } else { /* non populated slots */
+         /*
+         * hotplug is supported only for non-multifunction device
+         * so generate device description only for function 0
+         */
+        if (PCI_FUNC(devfn) ||
+            (pci_bus_is_express(bus) && PCI_SLOT(devfn) > 0)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void build_append_pcihp_slots_(Aml *, PCIBus *);
+void build_append_pcihp_slots_(Aml *parent_scope, PCIBus *bus)
+{
+    int devfn;
+    Aml *dev, *notify_method = NULL, *method;
+/*
+    QObject *bsel = object_property_get_qobject(OBJECT(bus),
+                        ACPI_PCIHP_PROP_BSEL, NULL);
+    uint64_t bsel_val = qnum_get_uint(qobject_to(QNum, bsel));
+    qobject_unref(bsel);
+*/
+    // aml_append(parent_scope, aml_name_decl("_ADR", aml_int(0x00060000 /* FIXME! */)));
+    // aml_append(parent_scope, aml_name_decl("BSEL", aml_int(bsel_val)));
+    notify_method = aml_method("DVNT", 2, AML_NOTSERIALIZED);
+
+    for (devfn = 0; devfn < ARRAY_SIZE(bus->devices); devfn++) {
+        int slot = PCI_SLOT(devfn);
+        int adr = slot << 16 | PCI_FUNC(devfn);
+	adr = 0x0;
+
+        if (is_devfn_ignored_hotplug(devfn, bus)) {
+            continue;
+        }
+
+        if (bus->devices[devfn]) {
+            // dev = aml_scope("S%.02X", devfn);
+            dev = aml_device("S%.02X", devfn);
+            aml_append(dev, aml_name_decl("_ADR", aml_int(adr)));
+        } else {
+            dev = aml_device("S%.02X", devfn);
+            aml_append(dev, aml_name_decl("_ADR", aml_int(adr)));
+        }
+
+        /*
+         * Can't declare _SUN here for every device as it changes 'slot'
+         * enumeration order in linux kernel, so use another variable for it
+         */
+        aml_append(dev, aml_name_decl("ASUN", aml_int(slot)));
+        // aml_append(dev, aml_pci_device_dsm());
+
+        aml_append(dev, aml_name_decl("_SUN", aml_int(slot)));
+        /* add _EJ0 to make slot hotpluggable  */
+        method = aml_method("_EJ0", 1, AML_NOTSERIALIZED);
+        aml_append(method,
+           /* aml_call2("PCEJ", aml_name("BSEL"), aml_name("_SUN")) */
+           aml_return(aml_int(0))
+        );
+        aml_append(dev, method);
+
+        // build_append_pcihp_notify_entry(notify_method, slot);
+
+        /* device descriptor has been composed, add it into parent context */
+        aml_append(parent_scope, dev);
+    }
+    aml_append(parent_scope, notify_method);
 }
 
 void acpi_dsdt_add_gpex(Aml *scope, struct GPEXConfig *cfg)
@@ -208,6 +312,48 @@ void acpi_dsdt_add_gpex(Aml *scope, struct GPEXConfig *cfg)
     aml_append(dev, aml_name_decl("_UID", aml_int(0)));
     aml_append(dev, aml_name_decl("_STR", aml_unicode("PCIe 0 Device")));
     aml_append(dev, aml_name_decl("_CCA", aml_int(1)));
+
+    /* OS capability method */
+    // Aml *osc = aml_method("_OSC", 4, AML_NOTSERIALIZED);
+    // aml_append(osc, aml_return(aml_int(1)));
+    // aml_append(dev, osc);
+
+    /* Define a S00 device for notification test in \SB.PCI0 scope */
+    // Aml *s00_dev =  aml_device("S%.02X", 0);
+    // aml_device("S%.02X", 0);
+    // aml_append(dev, s00_dev);
+
+    // Basically, add BSEL prop to the PCI buses
+    s.use_acpi_hotplug_bridge = true;
+    acpi_pcihp_reset(&s);
+
+    // Object *pci_host = acpi_get_i386_pci_host(); // Hacked to add Arm64 lookup
+    PCIHostState *host = PCI_HOST_BRIDGE(object_resolve_path("/machine/gpex", NULL));
+    if (host) {
+        qemu_log("GPEX host bridge found by ACPI.\n");
+    } else {
+        exit(100);
+    }
+    Object *pci_host = OBJECT(host);
+        // sb_scope = aml_scope("\\_SB");
+        // PCIBus pbus = PCI_HOST_BRIDGE(pci_host)->bus;
+        //Object *pci_host = acpi_get_i386_pci_host();
+    {
+         if (pci_host) {
+             PCIBus *pbus = PCI_HOST_BRIDGE(pci_host)->bus;
+	     PCIBus *sbus = pbus->child.lh_first;
+             Aml *rp = aml_device("S%.02X", 0x28);
+             aml_append(rp, aml_name_decl("_ADR", aml_int(0x00040000)));
+             /* Scan all PCI buses. Generate tables to support hotplug. */
+             // build_append_pci_bus_devices(ascope, pbus);
+             // if (object_property_find(OBJECT(pbus->child), ACPI_PCIHP_PROP_BSEL)) {
+	     if (object_property_find(OBJECT(sbus), ACPI_PCIHP_PROP_BSEL)) {
+                 // build_append_pcihp_slots_(ascope, sbus);
+                 build_append_pcihp_slots_(rp, sbus);
+             }
+             aml_append(dev, rp);
+         }
+    }
 
     acpi_dsdt_add_pci_route_table(dev, cfg->irq, scope, 0);
 

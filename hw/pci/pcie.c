@@ -30,6 +30,8 @@
 #include "qemu/range.h"
 #include "trace.h"
 
+#include "qemu/log.h"
+
 //#define DEBUG_PCIE
 #ifdef DEBUG_PCIE
 # define PCIE_DPRINTF(fmt, ...)                                         \
@@ -414,12 +416,16 @@ static void hotplug_event_notify(PCIDevice *dev)
         return;
     }
 
+    qemu_log("PCIE hotplug event intercepted, please notify it manually!\n");
+
     /* Note: the logic above does not take into account whether interrupts
      * are masked. The result is that interrupt will be sent when it is
      * subsequently unmasked. This appears to be legal: Section 6.7.3.4:
      * The Port may optionally send an MSI when there are hot-plug events that
      * occur while interrupt generation is disabled, and interrupt generation is
      * subsequently enabled. */
+
+/*
     if (msix_enabled(dev)) {
         msix_notify(dev, pcie_cap_flags_get_vector(dev));
     } else if (msi_enabled(dev)) {
@@ -427,6 +433,7 @@ static void hotplug_event_notify(PCIDevice *dev)
     } else if (pci_intx(dev) != -1) {
         pci_set_irq(dev, dev->exp.hpev_notified);
     }
+*/
 }
 
 static void hotplug_event_clear(PCIDevice *dev)
