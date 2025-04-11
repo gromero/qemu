@@ -27,6 +27,7 @@
 #include "acpi-common.h"
 #include "qemu/bitmap.h"
 #include "qemu/error-report.h"
+#include "qemu/log.h"
 #include "hw/pci/pci_bridge.h"
 #include "hw/cxl/cxl.h"
 #include "hw/core/cpu.h"
@@ -279,6 +280,13 @@ Object *acpi_get_i386_pci_host(void)
     host = PCI_HOST_BRIDGE(object_resolve_path("/machine/i440fx", NULL));
     if (!host) {
         host = PCI_HOST_BRIDGE(object_resolve_path("/machine/q35", NULL));
+    }
+
+    if (!host) {
+        host = PCI_HOST_BRIDGE(object_resolve_path("/machine/gpex", NULL));
+	if (host) {
+            qemu_log("GPEX host bridge found by ACPI.\n");
+	}
     }
 
     return OBJECT(host);

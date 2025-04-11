@@ -114,7 +114,7 @@ config Q35
 
 config MICROVM
     bool
-    default y
+    default n
     depends on I386 && FDT
     select DEVICE_TREE
     select SERIAL_ISA # for serial_hds_isa_init()
@@ -160,5 +160,5 @@ config VMMOUSE
 
 config XEN_EMU
     bool
-    default y
+    default n
     depends on KVM && I386

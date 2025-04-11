@@ -18,6 +18,10 @@ config ACPI_ICH9
     select ACPI_X86
     select APM
 
+config ACPI_GPEX
+    bool
+    select ACPI_PCIHP
+
 config ACPI_CPU_HOTPLUG
     bool
 

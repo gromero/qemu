@@ -25,6 +25,7 @@
 #include "hw/pci/pci_device.h"
 #include "hw/pci/pcie_host.h"
 #include "qom/object.h"
+#include "hw/acpi/gpex.h"
 
 #define TYPE_GPEX_HOST "gpex-pcihost"
 OBJECT_DECLARE_SIMPLE_TYPE(GPEXHost, GPEX_HOST)
@@ -36,6 +37,8 @@ struct GPEXRootState {
     /*< private >*/
     PCIDevice parent_obj;
     /*< public >*/
+
+    AcpiPciHpState acpi_pci_hotplug;
 };
 
 struct GPEXConfig {

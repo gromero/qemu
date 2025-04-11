@@ -100,10 +100,24 @@ static void *acpi_set_bsel(PCIBus *bus, void *opaque)
 static void acpi_set_pci_info(bool has_bridge_hotplug)
 {
     static bool bsel_is_set;
-    Object *host = acpi_get_i386_pci_host();
+    Object *host; //  = acpi_get_i386_pci_host();
     PCIBus *bus;
+    PCIHostState *host_;
     BSELInfo info = { .bsel_alloc = ACPI_PCIHP_BSEL_DEFAULT,
                       .has_bridge_hotplug = has_bridge_hotplug };
+
+    host_ = PCI_HOST_BRIDGE(object_resolve_path("/machine/i440fx", NULL));
+    if (!host_) {
+        host_ = PCI_HOST_BRIDGE(object_resolve_path("/machine/q35", NULL));
+    }
+    if (!host_) {
+        host_ = PCI_HOST_BRIDGE(object_resolve_path("/machine/gpex", NULL));
+        if (host_) {
+            qemu_log("GPEX host bridge found by ACPI. Called from acpi_set_pci_info()\n");
+        }
+    }
+
+    host = OBJECT(host_);
 
     if (bsel_is_set) {
         return;
