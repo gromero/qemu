@@ -39,6 +39,7 @@
 #include "system/kvm.h"
 #include "hw/intc/arm_gicv3_common.h"
 #include "qom/object.h"
+#include "hw/pci-host/gpex.h"
 
 #define NUM_GICV2M_SPIS       64
 #define NUM_VIRTIO_TRANSPORTS 32
@@ -175,6 +176,7 @@ struct VirtMachineState {
     hwaddr highest_gpa;
     DeviceState *gic;
     DeviceState *acpi_dev;
+    GPEXRootState *gpex_root;
     Notifier powerdown_notifier;
     PCIBus *bus;
     char *oem_id;

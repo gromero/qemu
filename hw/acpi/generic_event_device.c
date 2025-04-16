@@ -289,7 +289,7 @@ static void acpi_ged_ospm_status(AcpiDeviceIf *adev, ACPIOSTInfoList ***list)
     acpi_cpu_ospm_status(&s->cpuhp_state, list);
 }
 
-static void acpi_ged_send_event(AcpiDeviceIf *adev, AcpiEventStatusBits ev)
+void acpi_ged_send_event(AcpiDeviceIf *adev, AcpiEventStatusBits ev)
 {
     AcpiGedState *s = ACPI_GED(adev);
     GEDState *ged_st = &s->ged_state;

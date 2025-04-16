@@ -38,6 +38,10 @@
 #include "migration/vmstate.h"
 #include "qemu/module.h"
 #include "hw/acpi/gpex.h"
+#include "hw/acpi/generic_event_device.h"
+#include "hw/acpi/acpi_dev_interface.h"
+
+#include "qemu/log.h"
 
 /****************************************************************************
  * GPEX host
@@ -242,21 +246,33 @@ static void gpex_root_class_realize(PCIDevice *d, Error **errp)
 {
     GPEXRootState *grs = GPEX_ROOT_DEVICE(d);
 
-    // grs->acpi_pci_hotplug;
+    /* FIXME */
     grs->acpi_pci_hotplug.use_acpi_hotplug_bridge = true;
     if (grs->acpi_pci_hotplug.use_acpi_hotplug_bridge) {
-/*
-	    acpi_pcihp_init(OBJECT(d),
-                        &grs->acpi_pci_hotplug,
-                        pci_get_bus(d),
-                        pci_address_space_io(d),
-                        ACPI_PCIHP_ADDR_ICH9);
-*/
 
-            /* Set hotplug handler for the GPEX Controller */
-            qbus_set_hotplug_handler(BUS(pci_get_bus(d)), OBJECT(d));
+	/* Create acpi-pci-hotplug */
+        acpi_pcihp_init(OBJECT(d), &grs->acpi_pci_hotplug, pci_get_bus(d), pci_address_space_io(d), 0x0cc0 /* FIXME */);
+
+        /* Set hotplug handler for the GPEX Controller */
+        qbus_set_hotplug_handler(BUS(pci_get_bus(d)), OBJECT(d));
     }
+}
 
+static void gpex_root_instance_init(Object *obj)
+{
+    GPEXRootState *gpex_root = GPEX_ROOT_DEVICE(obj);
+    object_property_add_link(obj, "ged", TYPE_ACPI_GED, (Object **)&gpex_root->ged, object_property_allow_set_link, 0);
+}
+
+static void gpex_root_acpi_send_event(AcpiDeviceIf *adev, AcpiEventStatusBits ev)
+{
+   GPEXRootState *g = GPEX_ROOT_DEVICE(adev);
+
+   if (g->ged) {
+       acpi_ged_send_event(ACPI_DEVICE_IF(g->ged), ev);
+   } else {
+       qemu_log("GPEX: no GED device found to send event!\n");
+   }
 }
 
 static void gpex_root_class_init(ObjectClass *klass, void *data)
@@ -264,6 +280,7 @@ static void gpex_root_class_init(ObjectClass *klass, void *data)
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
     DeviceClass *dc = DEVICE_CLASS(klass);
     HotplugHandlerClass *hc = HOTPLUG_HANDLER_CLASS(klass);
+    AcpiDeviceIfClass *adevc = ACPI_DEVICE_IF_CLASS(klass);
 
     set_bit(DEVICE_CATEGORY_BRIDGE, dc->categories);
     dc->desc = "QEMU generic PCIe host bridge";
@@ -282,15 +299,20 @@ static void gpex_root_class_init(ObjectClass *klass, void *data)
 
     hc->pre_plug = gpex_device_pre_plug_cb;
     hc->plug = gpex_device_plug_cb;
+
+    adevc->send_event = gpex_root_acpi_send_event;
+    // void (*send_event)(AcpiDeviceIf *adev, AcpiEventStatusBits ev);
 }
 
 static const TypeInfo gpex_root_info = {
     .name = TYPE_GPEX_ROOT_DEVICE,
     .parent = TYPE_PCI_DEVICE,
     .instance_size = sizeof(GPEXRootState),
+    .instance_init = gpex_root_instance_init,
     .class_init = gpex_root_class_init,
     .interfaces = (InterfaceInfo[]) {
         { TYPE_HOTPLUG_HANDLER },
+	{ TYPE_ACPI_DEVICE_IF },
         { INTERFACE_CONVENTIONAL_PCI_DEVICE },
         { },
     },

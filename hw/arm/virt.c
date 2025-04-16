@@ -85,6 +85,7 @@
 #include "hw/virtio/virtio-iommu.h"
 #include "hw/char/pl011.h"
 #include "qemu/guest-random.h"
+#include "qom/qom-qobject.h"
 
 static GlobalProperty arm_virt_compat[] = {
     { TYPE_VIRTIO_IOMMU_PCI, "aw-bits", "48" },
@@ -1511,6 +1512,7 @@ static void create_pcie(VirtMachineState *vms)
 
     dev = qdev_new(TYPE_GPEX_HOST);
     object_property_add_child(OBJECT(vms), "gpex", OBJECT(dev));
+    vms->gpex_root = (&GPEX_HOST(dev)->gpex_root);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 
     ecam_id = VIRT_ECAM_ID(vms->highmem_ecam);
@@ -2405,6 +2407,14 @@ static void machvirt_init(MachineState *machine)
 
     if (has_ged && aarch64 && firmware_loaded && virt_is_acpi_enabled(vms)) {
         vms->acpi_dev = create_acpi_ged(vms);
+	object_property_set_link(OBJECT(vms->gpex_root), "ged", OBJECT(vms->acpi_dev), &error_abort);
+/*
+        AcpiDeviceIfClass *ged = ACPI_DEVICE_IF_CLASS(DEVICE_GET_CLASS(vms->acpi_dev));
+        QObject *o = object_property_get_qobject(OBJECT(DEVICE_CLASS(vms)), "gpex", NULL);
+        AcpiDeviceIfClass *gpex = ACPI_DEVICE_IF_CLASS(OBJECT_CLASS(o));
+	assert(ged);
+	assert(gpex);
+*/
     } else {
         create_gpio_devices(vms, VIRT_GPIO, sysmem);
     }
