@@ -26,6 +26,7 @@ static const uint32_t ged_supported_events[] = {
     ACPI_GED_PWR_DOWN_EVT,
     ACPI_GED_NVDIMM_HOTPLUG_EVT,
     ACPI_GED_CPU_HOTPLUG_EVT,
+    ACPI_GED_PCI_HOTPLUG_EVT,
 };
 
 /*
@@ -124,6 +125,15 @@ void build_ged_aml(Aml *table, const char *name, HotplugHandler *hotplug_dev,
                 aml_append(if_ctx,
                            aml_notify(aml_name("\\_SB.NVDR"),
                                       aml_int(0x80)));
+                break;
+            case ACPI_GED_PCI_HOTPLUG_EVT:
+                aml_append(if_ctx,
+                           // aml_notify(aml_name(ACPI_POWER_BUTTON_DEVICE),
+                           /* Notify S00 device for Device Check. */
+                           aml_notify(aml_name("\\_SB.PCI0.S28.S00"), aml_int(0x01))); // OK for hotplug!
+                           // aml_notify(aml_name("\\_SB.PCI0.S28.S00"), aml_int(0x03))); // ok-ish for hotunplug!
+                          // aml_call0("\\_SB.PCI0.PCNT"));
+                // aml_append(if_ctx, aml_notify(aml_name("\\_SB.PCI0.S28"), aml_int(0x03)));
                 break;
             default:
                 /*
@@ -303,6 +313,8 @@ void acpi_ged_send_event(AcpiDeviceIf *adev, AcpiEventStatusBits ev)
         sel = ACPI_GED_NVDIMM_HOTPLUG_EVT;
     } else if (ev & ACPI_CPU_HOTPLUG_STATUS) {
         sel = ACPI_GED_CPU_HOTPLUG_EVT;
+    } else if (ev & ACPI_PCI_HOTPLUG_STATUS) {
+        sel = ACPI_GED_PCI_HOTPLUG_EVT;
     } else {
         /* Unknown event. Return without generating interrupt. */
         warn_report("GED: Unsupported event %d. No irq injected", ev);
