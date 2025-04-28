@@ -75,7 +75,7 @@ struct GPEXHost {
 
 int gpex_set_irq_num(GPEXHost *s, int index, int gsi);
 
-void acpi_dsdt_add_gpex(Aml *scope, struct GPEXConfig *cfg);
+void acpi_dsdt_add_gpex(Aml *table, Aml *scope, struct GPEXConfig *cfg);
 void acpi_dsdt_add_gpex_host(Aml *scope, uint32_t irq);
 
 #define PCI_HOST_PIO_BASE               "x-pio-base"

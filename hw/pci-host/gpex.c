@@ -299,6 +299,9 @@ static void gpex_root_class_init(ObjectClass *klass, void *data)
 
     hc->pre_plug = gpex_device_pre_plug_cb;
     hc->plug = gpex_device_plug_cb;
+    hc->unplug_request = gpex_device_unplug_request_cb;
+    hc->unplug = gpex_device_unplug_cb;
+    hc->is_hotpluggable_bus = gpex_is_hotpluggable_bus;
 
     adevc->send_event = gpex_root_acpi_send_event;
     // void (*send_event)(AcpiDeviceIf *adev, AcpiEventStatusBits ev);

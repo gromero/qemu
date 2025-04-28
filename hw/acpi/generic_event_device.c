@@ -116,7 +116,7 @@ void build_ged_aml(Aml *table, const char *name, HotplugHandler *hotplug_dev,
                 aml_append(if_ctx,
                            // aml_notify(aml_name(ACPI_POWER_BUTTON_DEVICE),
                            /* Notify S00 device for Device Check. */
-                           aml_notify(aml_name("\\_SB.PCI0.S28.S00"), aml_int(0x01))); // OK for hotplug!
+                           aml_notify(aml_name("\\_SB.PCI0.S20.S00"), aml_int(0x01))); // OK for hotplug!
                            // aml_notify(aml_name("\\_SB.PCI0.S28.S00"), aml_int(0x03))); // ok-ish for hotunplug!
                           // aml_call0("\\_SB.PCI0.PCNT"));
                 // aml_append(if_ctx, aml_notify(aml_name("\\_SB.PCI0.S28"), aml_int(0x03)));
@@ -130,9 +130,9 @@ void build_ged_aml(Aml *table, const char *name, HotplugHandler *hotplug_dev,
                 aml_append(if_ctx,
                            // aml_notify(aml_name(ACPI_POWER_BUTTON_DEVICE),
                            /* Notify S00 device for Device Check. */
-                           aml_notify(aml_name("\\_SB.PCI0.S28.S00"), aml_int(0x01))); // OK for hotplug!
+                          /* aml_notify(aml_name("\\_SB.PCI0.S20.S00"), aml_int(0x01))); // OK for hotplug! */
                            // aml_notify(aml_name("\\_SB.PCI0.S28.S00"), aml_int(0x03))); // ok-ish for hotunplug!
-                          // aml_call0("\\_SB.PCI0.PCNT"));
+                          aml_call0("\\_SB.PCI0.PCNT"));
                 // aml_append(if_ctx, aml_notify(aml_name("\\_SB.PCI0.S28"), aml_int(0x03)));
                 break;
             default:

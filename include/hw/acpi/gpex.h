@@ -10,9 +10,10 @@ void gpex_device_pre_plug_cb(HotplugHandler *hotplug_dev, DeviceState *dev,
                                 Error **errp);
 void gpex_device_plug_cb(HotplugHandler *hotplug_dev, DeviceState *dev,
                             Error **errp);
-void gpex__device_unplug_request_cb(HotplugHandler *hotplug_dev,
+void gpex_device_unplug_request_cb(HotplugHandler *hotplug_dev,
                                       DeviceState *dev, Error **errp);
 void gpex_device_unplug_cb(HotplugHandler *hotplug_dev, DeviceState *dev,
                               Error **errp);
+bool gpex_is_hotpluggable_bus(HotplugHandler *hotplug_dev, BusState *bus);
 
 #endif /* HW_ACPI_GPEX_H */
