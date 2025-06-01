@@ -2255,6 +2255,7 @@ static void test_acpi_aarch64_virt_viot(void)
         .cd = "tests/data/uefi-boot-images/bios-tables-test.aarch64.iso.qcow2",
         .ram_start = 0x40000000ULL,
         .scan_len = 128ULL * 1024 * 1024,
+        .variant = ".viot",
     };
 
     test_acpi_one("-cpu cortex-a57 "
