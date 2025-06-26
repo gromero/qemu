@@ -964,9 +964,11 @@ void virt_acpi_build(VirtMachineState *vms, AcpiBuildTables *tables)
     }
 
     if (ms->nvdimms_state->is_enabled) {
+/*
         nvdimm_build_acpi(table_offsets, tables_blob, tables->linker,
                           ms->nvdimms_state, ms->ram_slots, vms->oem_id,
                           vms->oem_table_id);
+*/
     }
 
     if (its_class_name()) {

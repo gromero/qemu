@@ -2427,6 +2427,7 @@ static void machvirt_init(MachineState *machine)
     create_platform_bus(vms);
 
     if (machine->nvdimms_state->is_enabled) {
+/*
         const struct AcpiGenericAddress arm_virt_nvdimm_acpi_dsmio = {
             .space_id = AML_AS_SYSTEM_MEMORY,
             .address = vms->memmap[VIRT_NVDIMM_ACPI].base,
@@ -2436,6 +2437,7 @@ static void machvirt_init(MachineState *machine)
         nvdimm_init_acpi_state(machine->nvdimms_state, sysmem,
                                arm_virt_nvdimm_acpi_dsmio,
                                vms->fw_cfg, OBJECT(vms));
+*/
     }
 
     vms->bootinfo.ram_size = machine->ram_size;
@@ -2852,9 +2854,12 @@ static void virt_memory_pre_plug(HotplugHandler *hotplug_dev, DeviceState *dev,
     const bool is_nvdimm = object_dynamic_cast(OBJECT(dev), TYPE_NVDIMM);
 
     if (!vms->acpi_dev) {
-        error_setg(errp,
-                   "memory hotplug is not enabled: missing acpi-ged device");
-        return;
+	 /* Allow nvdimm DT or cold plug */
+        if (!(is_nvdimm && !dev->hotplugged)) {
+            error_setg(errp,
+                       "memory hotplug is not enabled: missing acpi-ged device");
+            return;
+         }
     }
 
     if (vms->mte) {
@@ -2874,17 +2879,8 @@ static void virt_memory_plug(HotplugHandler *hotplug_dev,
                              DeviceState *dev, Error **errp)
 {
     VirtMachineState *vms = VIRT_MACHINE(hotplug_dev);
-    MachineState *ms = MACHINE(hotplug_dev);
-    bool is_nvdimm = object_dynamic_cast(OBJECT(dev), TYPE_NVDIMM);
 
     pc_dimm_plug(PC_DIMM(dev), MACHINE(vms));
-
-    if (is_nvdimm) {
-        nvdimm_plug(ms->nvdimms_state);
-    }
-
-    hotplug_handler_plug(HOTPLUG_HANDLER(vms->acpi_dev),
-                         dev, &error_abort);
 }
 
 static void virt_machine_device_pre_plug_cb(HotplugHandler *hotplug_dev,
