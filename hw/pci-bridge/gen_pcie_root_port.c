@@ -132,6 +132,14 @@ static void gen_rp_realize(DeviceState *dev, Error **errp)
     pci_set_long(d->config + offset + 0x8, header2);
     pci_set_long(d->config + offset + 0xC, ctl1);
     pci_set_long(d->config + offset + 0x10, ctl2);
+    d->wmask[offset + 0xC] = 0xff;
+    d->wmask[offset + 0xC + 1] = 0xff;
+    d->wmask[offset + 0xC + 2] = 0xff;
+    d->wmask[offset + 0xC + 3] = 0xff;
+    d->wmask[offset + 0x10] = 0xff;
+    d->wmask[offset + 0x10 + 1] = 0xff;
+    d->wmask[offset + 0x10 + 2] = 0xff;
+    d->wmask[offset + 0x10 + 3] = 0xff;
     offset += 0x14;
 
     pcie_ide_init(d, offset);
