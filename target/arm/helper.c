@@ -7875,6 +7875,42 @@ static const ARMCPRegInfo sctlr2_reginfo[] = {
       .fieldoffset = offsetof(CPUARMState, cp15.sctlr2_el[3]) },
 };
 
+static CPAccessResult tcr2_access(CPUARMState *env, const ARMCPRegInfo *ri,
+                                  bool isread)
+{
+    return CP_ACCESS_OK;
+};
+
+static void tcr2_write(CPUARMState *env, const ARMCPRegInfo *ri,
+                       uint64_t value)
+{
+    int el = arm_current_el(env);
+    uint64_t valid_mask = 0ULL;
+
+    valid_mask |= TCR2_AMEC0;
+    if (el_is_in_host(env, el)) {
+        if (cpu_isar_feature(aa64_mec, env_archcpu(env))) {
+            valid_mask |= TCR2_AMEC1;
+	}
+    }
+
+    value &= valid_mask;
+    raw_write(env, ri, value);
+}
+
+static const ARMCPRegInfo tcr2_reginfo[] = {
+    { .name = "TCR2_EL1", .state = ARM_CP_STATE_AA64,
+      .opc0 = 3, .opc1 = 0, .opc2 = 3, .crn = 2, .crm = 0,
+      .access = PL1_RW, .accessfn = tcr2_access,
+      .writefn = tcr2_write,
+      .fieldoffset = offsetof(CPUARMState, cp15.tcr2_el[1]) },
+    { .name = "TCR2_EL2", .state = ARM_CP_STATE_AA64,
+      .opc0 = 3, .opc1 = 4, .opc2 = 3, .crn = 2, .crm = 0,
+      .access = PL2_RW, .accessfn = tcr2_access,
+      .writefn = tcr2_write,
+      .fieldoffset = offsetof(CPUARMState, cp15.tcr2_el[2]) },
+};
+
 void register_cp_regs_for_features(ARMCPU *cpu)
 {
     /* Register all the coprocessor registers based on feature bits */
@@ -9143,6 +9179,10 @@ void register_cp_regs_for_features(ARMCPU *cpu)
 
     if (cpu_isar_feature(aa64_sctlr2, cpu)) {
         define_arm_cp_regs(cpu, sctlr2_reginfo);
+    }
+
+    if (cpu_isar_feature(aa64_tcr2, cpu)) {
+        define_arm_cp_regs(cpu, tcr2_reginfo);
     }
 
     if (cpu_isar_feature(any_predinv, cpu)) {
