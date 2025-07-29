@@ -118,15 +118,16 @@ if __name__ == '__main__':
     gdb_pythonpath = gdb_env.get("PYTHONPATH", "").split(os.pathsep)
     gdb_pythonpath.append(os.path.dirname(os.path.realpath(__file__)))
     gdb_env["PYTHONPATH"] = os.pathsep.join(gdb_pythonpath)
-    result = subprocess.call(gdb_cmd, shell=True, stdout=output, stderr=stderr,
-                             env=gdb_env)
+    gdb_exit_code = subprocess.call(gdb_cmd, shell=True, stdout=output,
+                                    stderr=stderr, env=gdb_env)
 
     # A result of greater than 128 indicates a fatal signal (likely a
     # crash due to gdb internal failure). That's a problem for GDB and
     # not the test so we force a return of 0 so we don't fail the test on
     # account of broken external tools.
-    if result > 128:
-        log(output, "GDB crashed? (%d, %d) SKIPPING" % (result, result - 128))
+    if gdb_exit_code > 128:
+        log(output, "GDB crashed? (%d, %d) SKIPPING" %
+            (gdb_exit_code, gdb_exit_code - 128))
         exit(0)
 
     try:
@@ -135,4 +136,4 @@ if __name__ == '__main__':
         log(output, "GDB never connected? Killed guest")
         inferior.kill()
 
-    exit(result)
+    exit(gdb_exit_code)
