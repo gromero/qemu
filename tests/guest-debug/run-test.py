@@ -128,7 +128,7 @@ if __name__ == '__main__':
     if gdb_exit_code > 128:
         log(output, "GDB crashed? (%d, %d) SKIPPING" %
             (gdb_exit_code, gdb_exit_code - 128))
-        exit(0)
+        gdb_exit_code = 0
 
     try:
         inferior.wait(2)
