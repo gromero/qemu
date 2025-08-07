@@ -34,7 +34,7 @@ def report(cond, msg):
 def main(test, expected_arch=None):
     """Run a test function
 
-    This runs as the script it sourced (via -x, via run-test.py)."""
+    This runs as the script it sourced (via gdb -x from run-test.py)."""
     try:
         inferior = gdb.selected_inferior()
         arch = inferior.architecture()
