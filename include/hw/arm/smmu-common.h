@@ -45,6 +45,7 @@
 typedef enum SMMUSecSID {
     SMMU_SEC_SID_NS = 0,
     SMMU_SEC_SID_S,
+    SMMU_SEC_SID_R,
     SMMU_SEC_SID_NUM,
 } SMMUSecSID;
 

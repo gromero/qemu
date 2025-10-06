@@ -157,7 +157,7 @@ static void arm_virt_compat_default_set(MachineClass *mc)
 #define LEGACY_RAMLIMIT_BYTES (LEGACY_RAMLIMIT_GB * GiB)
 
 /* MMIO region size for SMMUv3 */
-#define SMMU_IO_LEN 0x20000
+#define SMMU_IO_LEN 0x60000
 
 /* Addresses and sizes of our components.
  * 0..128MB is space for a flash device so we can run bootrom code such as UEFI.

@@ -416,6 +416,7 @@ REG32(EVENTQ_IRQ_CFG2,     0xbc)
 #define A_IDREGS           0xfd0
 
 #define SMMU_SECURE_REG_START 0x8000 /* Start of secure-only registers */
+#define SMMU_REALM_REG_START 0x40000
 
 REG32(S_IDR0,               0x8000)
     FIELD(S_IDR0, STALL_MODEL, 24, 2)
