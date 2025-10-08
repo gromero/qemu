@@ -55,6 +55,21 @@ typedef struct SMMUv3RegBank {
     SMMUQueue eventq, cmdq;
 } SMMUv3RegBank;
 
+typedef struct SMMUv3RootRegBank {
+    uint32_t idr0;
+    uint32_t iidr;
+    uint32_t cr0;
+    uint32_t cr0ack;
+    uint64_t gpt_base;
+    uint64_t gpt_base_cfg;
+    uint64_t gpf_far;
+    uint64_t gpt_cfg_far;
+    uint64_t tlbi;
+    uint32_t tlbi_ctrl;
+    uint64_t gpt_base2;
+    uint32_t gpt_base_update;
+} SMMUv3RootRegBank;
+
 struct SMMUv3State {
     SMMUState     smmu_state;
 
@@ -64,6 +79,7 @@ struct SMMUv3State {
     uint32_t statusr;
 
     SMMUv3RegBank bank[SMMU_SEC_SID_NUM];
+    SMMUv3RootRegBank root;
 
     qemu_irq     irq[4];
     QemuMutex mutex;
