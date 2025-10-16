@@ -80,6 +80,7 @@ struct SMMUv3State {
 
     SMMUv3RegBank bank[SMMU_SEC_SID_NUM];
     SMMUv3RootRegBank root;
+    GHashTable *sid_to_sec_sid;
 
     qemu_irq     irq[4];
     QemuMutex mutex;
@@ -125,6 +126,29 @@ OBJECT_DECLARE_TYPE(SMMUv3State, SMMUv3Class, ARM_SMMUV3)
 static inline SMMUv3RegBank *smmuv3_bank(SMMUv3State *s, SMMUSecSID sec_sid)
 {
     return &s->bank[sec_sid];
+}
+
+static inline SMMUv3RegBank *smmuv3_bank_ns(SMMUv3State *s)
+{
+    return smmuv3_bank(s, SMMU_SEC_SID_NS);
+}
+
+static inline SMMUSecSID smmuv3_get_sec_sid(SMMUv3State *s, uint32_t sid)
+{
+    void *res = g_hash_table_lookup(s->sid_to_sec_sid,
+                                    (gconstpointer)(uintptr_t) sid);
+    if (!res) {
+        return SMMU_SEC_SID_NS;
+    }
+    return (SMMUSecSID)(uintptr_t) res;
+}
+
+static inline void smmuv3_set_sec_sid(SMMUv3State *s, uint32_t sid,
+                                            SMMUSecSID sec_sid)
+{
+    gpointer key = (gpointer)(uintptr_t)sid;
+    gpointer val = (gpointer)(uintptr_t)sec_sid;
+    g_hash_table_insert(s->sid_to_sec_sid, key, val);
 }
 
 #endif
