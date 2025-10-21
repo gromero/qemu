@@ -407,7 +407,7 @@ static void smmuv3_reset(SMMUv3State *s)
     bk->idr[3] = FIELD_DP32(bk->idr[3], IDR3, RIL, 1);
     bk->idr[3] = FIELD_DP32(bk->idr[3], IDR3, BBML, 2);
 
-    bk->idr[5] = FIELD_DP32(bk->idr[5], IDR5, OAS, SMMU_IDR5_OAS); /* 44 bits */
+    bk->idr[5] = FIELD_DP32(bk->idr[5], IDR5, OAS, SMMU_IDR5_OAS_44); /* 44 bits */
     /* 4K, 16K and 64K granule support */
     bk->idr[5] = FIELD_DP32(bk->idr[5], IDR5, GRAN4K, 1);
     bk->idr[5] = FIELD_DP32(bk->idr[5], IDR5, GRAN16K, 1);
@@ -1689,11 +1689,47 @@ static int smmuv3_cmdq_consume(SMMUv3State *s, Error **errp, SMMUSecSID sec_sid)
             break;
         case SMMU_CMD_PREFETCH_CONFIG:
         {
+            SMMUSecSID old_sec_sid;
             uint32_t sid = CMD_SID(&cmd);
-            SMMUSecSID old_sec_sid = smmuv3_get_sec_sid(s, sid);
-            if (old_sec_sid != sec_sid) {
-                trace_smmuv3_transition_sec_sid_device(sid, old_sec_sid, sec_sid);
+            int ret, valid;
+            STE ste;
+            SMMUEventInfo event = {
+                .type = SMMU_EVT_NONE,
+                .sid = sid,
+                .inval_ste_allowed = false,
+                .sec_sid = sec_sid
+            };
+            SMMUTransCfg *cfg = g_new0(SMMUTransCfg, 1);
+            cfg->sec_sid = sec_sid;
+            cfg->txattrs = smmu_get_txattrs(sec_sid);
+            cfg->as = smmu_get_address_space(bs, sec_sid);
+            if (!cfg->as) {
+                g_free(cfg);
+                qemu_log_mask(LOG_GUEST_ERROR, "SMMUv3 Can't get address space\n");
+                break;
+            }
+
+            ret = smmu_find_ste(s, sid, &ste, &event, cfg);
+            if (ret) {
+                g_free(cfg);
+                qemu_log_mask(LOG_GUEST_ERROR, "SMMUv3 Can't find STE entry");
+                break;
+            }
+
+            old_sec_sid = smmuv3_get_sec_sid(s, sid);
+            valid = STE_VALID(&ste);
+            if (valid &&
+                old_sec_sid == SMMU_SEC_SID_NS &&
+                sec_sid == SMMU_SEC_SID_R) {
                 smmuv3_set_sec_sid(s, sid, sec_sid);
+                trace_smmuv3_transition_sec_sid_device(sid, old_sec_sid, sec_sid);
+            }
+
+            if (valid &&
+                old_sec_sid == SMMU_SEC_SID_R &&
+                sec_sid == SMMU_SEC_SID_NS) {
+                smmuv3_set_sec_sid(s, sid, sec_sid);
+                trace_smmuv3_transition_sec_sid_device(sid, old_sec_sid, sec_sid);
             }
             break;
         }
