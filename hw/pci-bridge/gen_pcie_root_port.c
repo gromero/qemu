@@ -109,6 +109,9 @@ static void gen_rp_realize(DeviceState *dev, Error **errp)
         d->wmask[PCI_IO_BASE] = 0;
         d->wmask[PCI_IO_LIMIT] = 0;
     }
+
+    pcie_ide_init(d, PCI_CONFIG_SPACE_SIZE);
+    pcie_cap_tee_init(d);
 }
 
 static const VMStateDescription vmstate_rp_dev = {
