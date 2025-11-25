@@ -969,6 +969,10 @@ struct ArchCPU {
     MemoryRegion *tag_memory;
     MemoryRegion *secure_tag_memory;
 
+    /* MemoryRegion to use for FEAT_MEC. */
+    MemoryRegion *pseudo_encrypted_page;
+    MemoryRegion *tuple_memory;
+
     /* For v8M, pointer to the IDAU interface provided by board/SoC */
     Object *idau;
 
@@ -2336,7 +2340,9 @@ typedef enum ARMASIdx {
     ARMASIdx_S = 1,
     ARMASIdx_TagNS = 2,
     ARMASIdx_TagS = 3,
-    ARMASIdx_MAX = ARMASIdx_TagS
+    ARMASIdx_MEC = 4,
+    ARMASIdx_MEC_PAGE = 5,
+    ARMASIdx_MAX = ARMASIdx_MEC_PAGE
 } ARMASIdx;
 
 static inline ARMMMUIdx arm_space_to_phys(ARMSecuritySpace space)

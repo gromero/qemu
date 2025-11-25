@@ -2210,6 +2210,8 @@ static void machvirt_init(MachineState *machine)
     MemoryRegion *secure_sysmem = NULL;
     MemoryRegion *tag_sysmem = NULL;
     MemoryRegion *secure_tag_sysmem = NULL;
+    MemoryRegion *pseudo_encrypted_page = NULL;
+    MemoryRegion *tuple_memory = NULL;
     int n, virt_max_cpus;
     bool firmware_loaded;
     bool aarch64 = true;
@@ -2434,6 +2436,28 @@ static void machvirt_init(MachineState *machine)
                     error_report("MTE requested, but not supported ");
                     exit(1);
             }
+        }
+
+        if (vms->mec) {
+            if (tcg_enabled()) {
+                if (tuple_memory == NULL) {
+                    /* Add object_property_find(cpuobj, "tuple-memory", ...) here. */
+
+                    tuple_memory = g_new(MemoryRegion, 1);
+                    memory_region_init(tuple_memory, OBJECT(machine), "tuple-memory", UINT64_MAX / 32);
+
+                    pseudo_encrypted_page = g_new(MemoryRegion, 1);
+                    memory_region_init(pseudo_encrypted_page, OBJECT(machine), "pseudo-encrypted-page", 4 * 1024 /* 4 KiB */);
+                }
+
+                object_property_set_link(cpuobj, "tuple-memory",  OBJECT(tuple_memory), &error_abort);
+                object_property_set_link(cpuobj, "pseudo-encrypted-page",  OBJECT(pseudo_encrypted_page), &error_abort);
+
+                } else {
+                    /* Check for other accels here. */
+                    error_report("MEC requested, but not supported");
+                    exit(1);
+                }
         }
 
         qdev_realize(DEVICE(cpuobj), NULL, &error_fatal);
@@ -2817,6 +2841,20 @@ static void virt_set_mte(Object *obj, bool value, Error **errp)
     VirtMachineState *vms = VIRT_MACHINE(obj);
 
     vms->mte = value;
+}
+
+static bool virt_get_mec(Object *obj, Error **errp)
+{
+    VirtMachineState *vms = VIRT_MACHINE(obj);
+
+    return vms->mec;
+}
+
+static void virt_set_mec(Object *obj, bool value, Error **errp)
+{
+    VirtMachineState *vms = VIRT_MACHINE(obj);
+
+    vms->mec = value;
 }
 
 static char *virt_get_gic_version(Object *obj, Error **errp)
@@ -3423,6 +3461,12 @@ static void virt_machine_class_init(ObjectClass *oc, const void *data)
                                           "guest CPU which implements the ARM "
                                           "Memory Tagging Extension");
 
+    object_class_property_add_bool(oc, "mec", virt_get_mec, virt_set_mec);
+    object_class_property_set_description(oc, "mec",
+		                          "Set on/off to enable/disable emulating a"
+					  "guest CPU which implements the ARM"
+					  "Memory Encryption Extention");
+
     object_class_property_add_bool(oc, "its", virt_get_its,
                                    virt_set_its);
     object_class_property_set_description(oc, "its",
@@ -3500,6 +3544,9 @@ static void virt_instance_init(Object *obj)
 
     /* MTE is disabled by default.  */
     vms->mte = false;
+
+    /* FEAT_MEC is disabled by default. */
+    vms->mec = false;
 
     /* Supply kaslr-seed and rng-seed by default */
     vms->dtb_randomness = true;
