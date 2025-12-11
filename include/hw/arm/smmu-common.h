@@ -49,6 +49,20 @@ typedef enum SMMUSecSID {
     SMMU_SEC_SID_NUM,
 } SMMUSecSID;
 
+static inline ARMSecuritySpace sec_sid_to_security_space(SMMUSecSID sec_sid)
+{
+    switch (sec_sid) {
+    case SMMU_SEC_SID_NS:
+        return ARMSS_NonSecure;
+    case SMMU_SEC_SID_S:
+        return ARMSS_Secure;
+    case SMMU_SEC_SID_R:
+        return ARMSS_Realm;
+    default:
+        g_assert_not_reached();
+    }
+}
+
 MemTxAttrs smmu_get_txattrs(SMMUSecSID sec_sid);
 ARMSecuritySpace smmu_get_security_space(SMMUSecSID sec_sid);
 

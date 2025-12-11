@@ -296,6 +296,7 @@ typedef struct SMMUEventInfo {
             uint32_t ssid;
             bool ssv;
             dma_addr_t addr;
+            bool gpcf;
        } f_ste_fetch;
        struct SSIDInfo c_bad_ste;
        struct {
@@ -319,6 +320,7 @@ typedef struct SMMUEventInfo {
             bool ind;
             uint8_t class;
             dma_addr_t addr2;
+            bool gpcf;
        } f_walk_eabt;
        struct FullInfo f_translation;
        struct FullInfo f_addr_size;
@@ -346,6 +348,7 @@ typedef struct SMMUEventInfo {
 #define EVT_SET_SID(x, v)   ((x)->word[1] = v)
 #define EVT_SET_STAG(x, v)  ((x)->word[2] = deposit32((x)->word[2], 0 , 16, v))
 #define EVT_SET_STALL(x, v) ((x)->word[2] = deposit32((x)->word[2], 31, 1 , v))
+#define EVT_SET_GPCF(x, v)  ((x)->word[2] = deposit32((x)->word[2], 16, 1 , v))
 #define EVT_SET_PNU(x, v)   ((x)->word[3] = deposit32((x)->word[3], 1 , 1 , v))
 #define EVT_SET_IND(x, v)   ((x)->word[3] = deposit32((x)->word[3], 2 , 1 , v))
 #define EVT_SET_RNW(x, v)   ((x)->word[3] = deposit32((x)->word[3], 3 , 1 , v))

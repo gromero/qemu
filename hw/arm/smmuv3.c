@@ -27,6 +27,7 @@
 #include "hw/pci/pci.h"
 #include "cpu.h"
 #include "exec/target_page.h"
+#include "target/arm/internals.h"
 #include "trace.h"
 #include "qemu/log.h"
 #include "qemu/error-report.h"
@@ -41,6 +42,93 @@
                                         (cfg)->record_faults) || \
                                         ((ptw_info).stage == SMMU_STAGE_2 && \
                                         (cfg)->s2cfg.record_faults))
+
+static uint64_t smmuv3_report_gpf(SMMUv3State *s, SMMUSecSID sec_sid,
+                                  uint64_t gpf_far,
+                                  hwaddr translated, SMMUGpc gpc)
+{
+    if (FIELD_EX64(gpf_far, ROOT_GPF_FAR, FAULT)) {
+        /* Another fault is already active */
+        return gpf_far;
+    }
+
+    gpf_far = 0;
+    gpf_far = FIELD_DP64(gpf_far, ROOT_GPF_FAR, FAULT, 1);
+    gpf_far = FIELD_DP64(gpf_far, ROOT_GPF_FAR, REASON, gpc.reason);
+    uint64_t faultcode = 0;
+    switch (gpc.reason) {
+    case SMMU_GPC_REASON_TRANSLATION:
+        faultcode = gpc.translation;
+        break;
+    case SMMU_GPC_REASON_GERROR:
+        faultcode = gpc.gerror;
+        break;
+    case SMMU_GPC_REASON_TRANSACTION:
+        faultcode = 0;
+        break;
+    }
+    gpf_far = FIELD_DP64(gpf_far, ROOT_GPF_FAR, FAULTCODE, faultcode);
+    uint64_t faddr = FIELD_EX64(translated, ROOT_GPF_FAR, FADDR);
+    gpf_far = FIELD_DP64(gpf_far, ROOT_GPF_FAR, FADDR, faddr);
+
+    uint64_t fpas = 0;
+    switch (sec_sid) {
+    case SMMU_SEC_SID_NS:
+        fpas = 0b01;
+        break;
+    case SMMU_SEC_SID_S:
+        fpas = 0b00;
+        break;
+    case SMMU_SEC_SID_R:
+        fpas = 0b11;
+        break;
+    case SMMU_SEC_SID_NUM:
+        g_assert_not_reached();
+    }
+    gpf_far = FIELD_DP64(gpf_far, ROOT_GPF_FAR, FPAS, fpas);
+    return gpf_far;
+}
+
+static bool smmuv3_granule_protection_check(SMMUv3State *s,
+                                            SMMUSecSID sec_sid, int asid,
+                                            hwaddr iova, hwaddr translated,
+                                            SMMUGpc gpc)
+{
+    /*
+     * The fields in SMMU_ROOT_GPT_BASE_CFG are the same as for GPCCR_EL3,
+     * except there is no copy of GPCCR_EL3.GPC. See SMMU_ROOT_CR0.GPCEN.
+     */
+    const bool gpc_enabled = FIELD_EX32(s->root.cr0, ROOT_CR0, GPCEN);
+    if (!gpc_enabled) {
+        return true;
+    }
+
+    bool sel2_enabled = FIELD_EX32(s->bank[SMMU_SEC_SID_S].idr[1], S_IDR1, SEL2);
+
+    ARMSecuritySpace pspace = sec_sid_to_security_space(sec_sid);
+    ARMSecuritySpace ss = ARMSS_Root;
+    ARMMMUFaultInfo fi;
+
+    ARMGranuleProtectionConfig config = {
+        .gpccr = s->root.gpt_base_cfg,
+        .gptbr = s->root.gpt_base >> 12,
+        .parange = FIELD_EX32(s->bank[sec_sid].idr[5], IDR5, OAS),
+        .support_sel2 = sel2_enabled,
+        .gpt_as = &s->smmu_state.secure_memory_as
+    };
+
+    if (!arm_granule_protection_check(config, translated, pspace, ss, &fi)) {
+        trace_smmuv3_gpc_fault(sec_sid, asid,
+                               iova, translated, fi.gpcf);
+        uint64_t *gpf_far = fi.gpcf == GPCF_Fail ? &s->root.gpf_far :
+                                                   &s->root.gpt_cfg_far;
+        *gpf_far = smmuv3_report_gpf(s, sec_sid, *gpf_far, translated, gpc);
+        return false;
+    }
+
+    trace_smmuv3_gpc_success(sec_sid, asid, iova, translated);
+    return true;
+}
 
 /**
  * smmuv3_trigger_irq - pulse @irq if enabled and update
@@ -111,8 +199,10 @@ static void smmuv3_write_gerrorn(SMMUv3State *s, uint32_t new_gerrorn)
     trace_smmuv3_write_gerrorn(toggled & pending, bank->gerrorn);
 }
 
-static inline MemTxResult queue_read(SMMUQueue *q, Cmd *cmd,
-                                     AddressSpace *as, MemTxAttrs attrs)
+static inline MemTxResult queue_read(SMMUv3State *s,
+                                     SMMUQueue *q, Cmd *cmd,
+                                     AddressSpace *as, MemTxAttrs attrs,
+                                     SMMUSecSID sec_sid)
 {
     dma_addr_t addr = Q_CONS_ENTRY(q);
     MemTxResult ret;
@@ -122,14 +212,25 @@ static inline MemTxResult queue_read(SMMUQueue *q, Cmd *cmd,
     if (ret != MEMTX_OK) {
         return ret;
     }
+
+    SMMUGpc gpc = {.reason = SMMU_GPC_REASON_GERROR,
+                   .gerror = SMMU_CMDQ_GPF};
+    if (!smmuv3_granule_protection_check(s, sec_sid, CMD_ASID(cmd),
+                                         addr, addr, gpc)) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                "GPC fail read CMDQ at 0x%"PRIx64"\n", addr);
+        return MEMTX_ACCESS_ERROR;
+    }
     for (i = 0; i < ARRAY_SIZE(cmd->word); i++) {
         le32_to_cpus(&cmd->word[i]);
     }
     return ret;
 }
 
-static MemTxResult queue_write(SMMUQueue *q, Evt *evt_in,
-                               AddressSpace *as, MemTxAttrs attrs)
+static MemTxResult queue_write(SMMUv3State *s,
+                               SMMUQueue *q, Evt *evt_in,
+                               AddressSpace *as, MemTxAttrs attrs,
+                               SMMUSecSID sec_sid)
 {
     dma_addr_t addr = Q_PROD_ENTRY(q);
     MemTxResult ret;
@@ -142,6 +243,13 @@ static MemTxResult queue_write(SMMUQueue *q, Evt *evt_in,
     ret = dma_memory_write(as, addr, &evt, sizeof(Evt), attrs);
     if (ret != MEMTX_OK) {
         return ret;
+    }
+    SMMUGpc gpc = {.reason = SMMU_GPC_REASON_GERROR,
+                   .gerror = SMMU_EVENTQ_GPF};
+    if (!smmuv3_granule_protection_check(s, sec_sid, 0, addr, addr, gpc)) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                "GPC fail write EVENTQ at 0x%"PRIx64"\n", addr);
+        return MEMTX_ACCESS_ERROR;
     }
 
     queue_prod_incr(q);
@@ -168,7 +276,7 @@ static MemTxResult smmuv3_write_eventq(SMMUv3State *s, SMMUSecSID sec_sid,
         return MEMTX_ERROR;
     }
 
-    r = queue_write(q, evt, as, txattrs);
+    r = queue_write(s, q, evt, as, txattrs, sec_sid);
     if (r != MEMTX_OK) {
         return r;
     }
@@ -212,6 +320,7 @@ void smmuv3_record_event(SMMUv3State *s, SMMUEventInfo *info)
         EVT_SET_SSID(&evt, info->u.f_ste_fetch.ssid);
         EVT_SET_SSV(&evt,  info->u.f_ste_fetch.ssv);
         EVT_SET_ADDR2(&evt, info->u.f_ste_fetch.addr);
+        EVT_SET_GPCF(&evt, info->u.f_ste_fetch.gpcf);
         break;
     case SMMU_EVT_C_BAD_STE:
         EVT_SET_SSID(&evt, info->u.c_bad_ste.ssid);
@@ -230,12 +339,15 @@ void smmuv3_record_event(SMMUv3State *s, SMMUEventInfo *info)
         EVT_SET_SSID(&evt, info->u.f_cd_fetch.ssid);
         EVT_SET_SSV(&evt,  info->u.f_cd_fetch.ssv);
         EVT_SET_ADDR(&evt, info->u.f_cd_fetch.addr);
+        EVT_SET_GPCF(&evt, info->u.f_cd_fetch.gpcf);
         break;
     case SMMU_EVT_C_BAD_CD:
         EVT_SET_SSID(&evt, info->u.c_bad_cd.ssid);
         EVT_SET_SSV(&evt,  info->u.c_bad_cd.ssv);
         break;
     case SMMU_EVT_F_WALK_EABT:
+        EVT_SET_GPCF(&evt, info->u.f_walk_eabt.gpcf);
+        /* fallthrough */
     case SMMU_EVT_F_TRANSLATION:
     case SMMU_EVT_F_ADDR_SIZE:
     case SMMU_EVT_F_ACCESS:
@@ -449,6 +561,18 @@ static int smmu_get_ste(SMMUv3State *s, dma_addr_t addr, STE *buf,
         event->u.f_ste_fetch.addr = addr;
         return -EINVAL;
     }
+    SMMUGpc gpc = {.reason = SMMU_GPC_REASON_TRANSLATION,
+                   .translation = SMMU_GPF_STE_FETCH};
+    if (!smmuv3_granule_protection_check(s, cfg->sec_sid, cfg->asid,
+                                         addr, addr, gpc)) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                "GPC fail pte at address 0x%"PRIx64"\n", addr);
+        event->type = SMMU_EVT_F_STE_FETCH;
+        event->u.f_ste_fetch.addr = addr;
+        event->u.f_ste_fetch.gpcf = true;
+        return -EINVAL;
+    }
+
     for (i = 0; i < ARRAY_SIZE(buf->word); i++) {
         le32_to_cpus(&buf->word[i]);
     }
@@ -482,6 +606,7 @@ static int smmu_get_cd(SMMUv3State *s, STE *ste, SMMUTransCfg *cfg,
                        uint32_t ssid, CD *buf, SMMUEventInfo *event)
 {
     dma_addr_t addr = STE_CTXPTR(ste);
+    const dma_addr_t iova = addr;
     int ret, i;
     SMMUTranslationStatus status;
     SMMUTLBEntry *entry;
@@ -507,6 +632,17 @@ static int smmu_get_cd(SMMUv3State *s, STE *ste, SMMUTransCfg *cfg,
                       "Cannot fetch pte at address=0x%"PRIx64"\n", addr);
         event->type = SMMU_EVT_F_CD_FETCH;
         event->u.f_cd_fetch.addr = addr;
+        return -EINVAL;
+    }
+    SMMUGpc gpc = {.reason = SMMU_GPC_REASON_TRANSLATION,
+                   .translation = SMMU_GPF_CD_FETCH };
+    if (!smmuv3_granule_protection_check(s, cfg->sec_sid, cfg->asid,
+                                         iova, addr, gpc)) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "GPC fail for pte at address=0x%"PRIx64"\n", addr);
+        event->type = SMMU_EVT_F_CD_FETCH;
+        event->u.f_cd_fetch.addr = addr;
+        event->u.f_cd_fetch.gpcf = true;
         return -EINVAL;
     }
     for (i = 0; i < ARRAY_SIZE(buf->word); i++) {
@@ -815,6 +951,17 @@ int smmu_find_ste(SMMUv3State *s, uint32_t sid, STE *ste, SMMUEventInfo *event,
             event->u.f_ste_fetch.addr = l1ptr;
             return -EINVAL;
         }
+        SMMUGpc gpc = {.reason = SMMU_GPC_REASON_TRANSLATION,
+                       .translation = SMMU_GPF_STE_FETCH};
+        if (!smmuv3_granule_protection_check(s, cfg->sec_sid, cfg->asid,
+                                             l1ptr, l1ptr, gpc)) {
+            qemu_log_mask(LOG_GUEST_ERROR,
+                          "GPC fail for L1PTR at 0x%"PRIx64"\n", l1ptr);
+            event->type = SMMU_EVT_F_STE_FETCH;
+            event->u.f_ste_fetch.addr = l1ptr;
+            event->u.f_ste_fetch.gpcf = true;
+            return -EINVAL;
+        }
         for (i = 0; i < ARRAY_SIZE(l1std.word); i++) {
             le32_to_cpus(&l1std.word[i]);
         }
@@ -1099,10 +1246,21 @@ static SMMUTranslationStatus smmuv3_do_translate(SMMUv3State *s, hwaddr addr,
     }
 
     cached_entry = smmu_translate(bs, cfg, addr, flag, &ptw_info);
-
     if (desc_s2_translation) {
         cfg->asid = asid;
         cfg->stage = stage;
+    }
+
+    if (cached_entry) {
+        hwaddr translated = CACHED_ENTRY_TO_ADDR(cached_entry, addr);
+        SMMUGpc gpc = {.reason = SMMU_GPC_REASON_TRANSLATION,
+                       .translation = SMMU_GPF_WALK_EABT};
+        if (!smmuv3_granule_protection_check(s, cfg->sec_sid, cfg->asid,
+                                             addr, translated, gpc)) {
+            cached_entry = NULL;
+            ptw_info.type = SMMU_PTW_ERR_WALK_EABT;
+            event->u.f_walk_eabt.gpcf = true;
+        }
     }
 
     if (!cached_entry) {
@@ -1658,7 +1816,7 @@ static int smmuv3_cmdq_consume(SMMUv3State *s, Error **errp, SMMUSecSID sec_sid)
             break;
         }
 
-        if (queue_read(q, &cmd, as, attrs) != MEMTX_OK) {
+        if (queue_read(s, q, &cmd, as, attrs, sec_sid) != MEMTX_OK) {
             cmd_error = SMMU_CERROR_ABT;
             break;
         }
@@ -2375,6 +2533,18 @@ static MemTxResult smmu_root_writell(SMMUv3State *s, hwaddr offset,
     case A_ROOT_GPT_BASE:
         s->root.gpt_base = data;
         return MEMTX_OK;
+    case A_ROOT_GPF_FAR:
+        if (FIELD_EX64(s->root.gpf_far, ROOT_GPF_FAR, FAULT) &&
+            !FIELD_EX64(data, ROOT_GPF_FAR, FAULT)) {
+            s->root.gpf_far = 0;
+        }
+        return MEMTX_OK;
+    case A_ROOT_GPT_CFG_FAR:
+        if (FIELD_EX64(s->root.gpt_cfg_far, ROOT_GPF_FAR, FAULT) &&
+            !FIELD_EX64(data, ROOT_GPF_FAR, FAULT)) {
+            s->root.gpt_cfg_far = 0;
+        }
+        return MEMTX_OK;
     default:
         qemu_log_mask(LOG_UNIMP,
                       "%s unhandled 64-bit access at 0x%"PRIx64" (WI)\n",
@@ -2650,6 +2820,12 @@ static MemTxResult smmu_root_readll(SMMUv3State *s, hwaddr offset,
 {
     uint32_t reg_offset = offset & 0xfff;
     switch (reg_offset) {
+    case A_ROOT_GPF_FAR:
+        *data = s->root.gpf_far;
+        return MEMTX_OK;
+    case A_ROOT_GPT_CFG_FAR:
+        *data = s->root.gpt_cfg_far;
+        return MEMTX_OK;
     default:
         qemu_log_mask(LOG_UNIMP,
                       "%s unhandled 64-bit access at 0x%"PRIx64" (RAZ)\n",
