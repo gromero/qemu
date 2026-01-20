@@ -25,6 +25,7 @@
 #include "hw/core/qdev-properties.h"
 #include "hw/core/qdev.h"
 #include "hw/pci/pci.h"
+#include "hw/pci/msi.h"
 #include "cpu.h"
 #include "exec/target_page.h"
 #include "target/arm/internals.h"
@@ -1359,6 +1360,13 @@ static IOMMUTLBEntry smmuv3_translate(IOMMUMemoryRegion *mr, hwaddr addr,
     uint32_t sid = smmu_get_sid(sdev);
     SMMUSecSID sec_sid = sdev->sec_sid == SMMU_SEC_SID_S ?
                          SMMU_SEC_SID_S : smmuv3_get_sec_sid(s, sid);
+
+    int bus_num = PCI_BUS_NUM(sid);
+    PCIDevice *dev = pci_find_device(sdev->bus, bus_num, sdev->devfn);
+    if (sec_sid == SMMU_SEC_SID_R && addr == msi_message_address_register(dev)) {
+        sec_sid = SMMU_SEC_SID_NS;
+    }
+
     SMMUv3RegBank *bank = smmuv3_bank(s, sec_sid);
     SMMUEventInfo event = {.type = SMMU_EVT_NONE,
                            .sid = sid,
