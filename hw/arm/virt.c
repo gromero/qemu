@@ -1751,6 +1751,12 @@ static void create_tag_ram(MemoryRegion *tag_sysmem,
     memory_region_add_subregion(tag_sysmem, base / 32, tagram);
 }
 
+static void create_mec_ram(MemoryRegion *tag_sysmem,
+                           hwaddr base, hwaddr size,
+                           const char *name)
+{
+    memory_region_init_ram(tag_sysmem, NULL, name, size / 32, &error_fatal);
+}
 static void create_secure_ram(VirtMachineState *vms,
                               MemoryRegion *secure_sysmem,
                               MemoryRegion *secure_tag_sysmem)
@@ -2524,6 +2530,10 @@ static void machvirt_init(MachineState *machine)
     if (tag_sysmem) {
         create_tag_ram(tag_sysmem, vms->memmap[VIRT_MEM].base,
                        machine->ram_size, "mach-virt.tag");
+    }
+
+    if (tuple_memory) {
+        create_mec_ram(tuple_memory, vms->memmap[VIRT_MEM].base, machine->ram_size, "tuple-memory");
     }
 
     vms->highmem_ecam &= (!firmware_loaded || aarch64);

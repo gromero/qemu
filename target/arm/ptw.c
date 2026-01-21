@@ -3527,6 +3527,36 @@ static bool get_phys_addr_disabled(CPUARMState *env,
     result->f.lg_page_size = TARGET_PAGE_BITS;
     result->cacheattrs.shareability = shareability;
     result->cacheattrs.attrs = memattr;
+
+    uint64_t mecid = env->cp15.mecid_p0_el2;
+
+    printf("======> phys_addr = %lx\n", address);
+    printf("=======>MECID_P0_EL2 = %lx\n", mecid);
+    printf("======> access_type = %d\n", access_type);
+
+    if (mecid == 1) {
+        printf("MECID magic number matches!\n");
+
+        MemoryRegion *mr;
+        AddressSpace *mec_as;
+        hwaddr mec_paddr, xlat;
+        MemTxAttrs memattrs = { 0x0 };
+        void *p;
+
+        mec_paddr = address >> TARGET_PAGE_BITS;
+
+        mec_as = cpu_get_address_space(env_cpu(env), ARMASIdx_MEC);
+        mr = address_space_translate(mec_as, mec_paddr, &xlat, NULL, true, memattrs);
+
+        p = memory_region_get_ram_ptr(mr) + xlat;
+
+        printf("Phys. address %lx, in fpn = %lx, in MEC AS, is located at host addr: %p\n", address, (uint64_t) mec_paddr, p);
+
+       *(uint32_t *)p = (uint32_t) 0xbeef;
+    } else {
+        printf("No MECID magic number found.\n");
+    }
+
     return false;
 }
 
@@ -3761,6 +3791,7 @@ static bool get_phys_addr_nogpc(CPUARMState *env, S1Translate *ptw,
     /* Definitely a real MMU, not an MPU */
 
     if (regime_translation_disabled(env, mmu_idx, ptw->in_space)) {
+        printf("-------> vaddr = %lx\n", address);
         return get_phys_addr_disabled(env, ptw, address, access_type,
                                       result, fi);
     }
