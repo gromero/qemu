@@ -1757,6 +1757,21 @@ static void create_mec_ram(MemoryRegion *tag_sysmem,
 {
     memory_region_init_ram(tag_sysmem, NULL, name, size / 32, &error_fatal);
 }
+
+static void create_mec_ram_fake_page(MemoryRegion *mr, uint64_t size, const char *name)
+{
+    assert(is_power_of_2(size) );
+    assert(size >= sizeof(uint32_t));
+
+    uint32_t *ptr = g_malloc(size);
+
+    for (int i = 0; i < size / sizeof(uint32_t); i++) {
+        ptr[i] = 0xDEADBEEF;
+    }
+
+    memory_region_init_ram_ptr(mr, NULL, name, size, ptr);
+}
+
 static void create_secure_ram(VirtMachineState *vms,
                               MemoryRegion *secure_sysmem,
                               MemoryRegion *secure_tag_sysmem)
@@ -2534,6 +2549,10 @@ static void machvirt_init(MachineState *machine)
 
     if (tuple_memory) {
         create_mec_ram(tuple_memory, vms->memmap[VIRT_MEM].base, machine->ram_size, "tuple-memory");
+    }
+
+    if(pseudo_encrypted_page) {
+       create_mec_ram_fake_page(pseudo_encrypted_page, 4 * 1024, "mec-fake-page");
     }
 
     vms->highmem_ecam &= (!firmware_loaded || aarch64);
