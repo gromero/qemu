@@ -3846,7 +3846,7 @@ static uint32_t *get_mecid_ptr(CPUARMState *env, hwaddr pa)
     mr = address_space_translate(mec_as, mec_paddr, &xlat, NULL, true, memattrs);
 
     /*
-     * Return pointer in mec AS associated to physical address 'pa' that is
+     * Return pointer in the mec AS associated to physical address 'pa' that is
      * used to store the MECID associated to 'pa'.
      */
     return memory_region_get_ram_ptr(mr) + xlat;
@@ -3866,13 +3866,14 @@ static void set_mecid(CPUARMState *env, hwaddr pa, uint32_t mecid)
  * Returns 'false' on failure and 'true' on success.
  */
 static bool mecid_check(CPUARMState *env, S1Translate *ptw,
-                        MMUAccessType access_type, GetPhysAddrResult *result)
+                        MMUAccessType access_type, GetPhysAddrResult *result,
+                        ARMMMUIdx s1_mmu_idx)
 {
     ARMSecuritySpace ss = ptw->out_space;
     /* Final physical address after translation. */
     hwaddr pa = result->f.phys_addr;
     /* Find out which EL controls EMEC for Stage 1 translations. */
-    uint32_t el = regime_el(ptw->in_mmu_idx) < 3 ? 2 : 3;
+    uint32_t el = regime_el(s1_mmu_idx) < 3 ? 2 : 3;
 
     /* XXX(gromero): Do we need to check for SCR_EL3.SCTLR2En when el == 2? */
     if (!(cpu_isar_feature(aa64_mec, env_archcpu(env)) &&
@@ -3893,61 +3894,73 @@ static bool mecid_check(CPUARMState *env, S1Translate *ptw,
 
     /* XXX(gromero): Implement AMEC capture from table descriptors. */
     bool amec = false;
-
+    /* XXX(gromero): Implement 2RANGES check. */
     bool varange_lower = false;
+    /* MECID set in register for a given translation regime. */
     uint32_t mecid;
 
-    /* As per AArch64.S1OutputMECID(). */
-    switch (ptw->in_mmu_idx) {
-    case ARMMMUIdx_E3:
-        mecid = env->cp15.mecid_rl_a_el3;
-        break;
-    case ARMMMUIdx_E2:
-        mecid = amec ? env->cp15.mecid_a0_el2 : env->cp15.mecid_p0_el2;
-        break;
-    case ARMMMUIdx_E20_0:
-    case ARMMMUIdx_E20_2:
-        if (varange_lower) {
-            mecid = amec ? env->cp15.mecid_a0_el2 : env->cp15.mecid_p0_el2;
-        } else {
-            mecid = amec ? env->cp15.mecid_a1_el2 : env->cp15.mecid_p1_el2;
+    ARMMMUIdx ptw_mmu_idx = ptw->in_mmu_idx; /* ARMMMUIdx after ptw. */
+    bool is_pa_from_s2 = regime_is_stage2(ptw_mmu_idx);
+    bool is_mmu_disabled = regime_translation_disabled(env, ptw_mmu_idx, ss);
+    if (is_pa_from_s2) { /* PA from Stage 2. */
+        /* As per AArch64.S2OutputMECID(). */
+        mecid = amec ? env->cp15.vmecid_a_el2 : env->cp15.vmecid_p_el2;
+
+    } else { /* PA from Stage 1. */
+        if (is_mmu_disabled) { /* PA from Stage 1 and MMU is disabled. */
+            /* As per AArch64.S1DisabledOutputMECID(). */
+            switch (s1_mmu_idx) {
+            case ARMMMUIdx_E3:
+            case ARMMMUIdx_E30_0:
+                /* No MECID check for accesses from EL3. */
+                return true;
+                break;
+            case ARMMMUIdx_E20_0:
+            case ARMMMUIdx_E20_2:
+                mecid = env->cp15.mecid_p0_el2;
+                break;
+            case ARMMMUIdx_E10_0:
+            case ARMMMUIdx_E10_1:
+                mecid = env->cp15.vmecid_p_el2;
+                break;
+            default:
+                g_assert_not_reached();
+            }
+
+        } else { /* PA from Stage 1 and MMU is enabled. */
+            /* As per AArch64.S1OutputMECID(). */
+            switch (s1_mmu_idx) {
+            case ARMMMUIdx_E3:
+                mecid = env->cp15.mecid_rl_a_el3;
+                break;
+            case ARMMMUIdx_E2:
+                mecid = amec ? env->cp15.mecid_a0_el2 : env->cp15.mecid_p0_el2;
+                break;
+            case ARMMMUIdx_E20_0:
+            case ARMMMUIdx_E20_2:
+                if (varange_lower) {
+                    mecid = amec ? env->cp15.mecid_a0_el2 : env->cp15.mecid_p0_el2;
+                } else {
+                    mecid = amec ? env->cp15.mecid_a1_el2 : env->cp15.mecid_p1_el2;
+                }
+                break;
+            case ARMMMUIdx_E10_0:
+            case ARMMMUIdx_E10_1:
+                mecid = env->cp15.vmecid_p_el2;
+                break;
+            default:
+                g_assert_not_reached();
+            }
         }
-        break;
-    case ARMMMUIdx_E10_0:
-    case ARMMMUIdx_E10_1:
-        mecid = env->cp15.vmecid_p_el2;
-        break;
-    default:
-        g_assert_not_reached();
     }
-
-    /* As per AArch64.S1DisabledOutputMECID(). */
-    switch (ptw->in_mmu_idx) {
-    case ARMMMUIdx_E3:
-    case ARMMMUIdx_E30_0:
-        /* No MECID check for accesses from EL3. */
-        return true;
-        break;
-    case ARMMMUIdx_E20_0:
-    case ARMMMUIdx_E20_2:
-        mecid = env->cp15.mecid_p0_el2;
-        break;
-    case ARMMMUIdx_E10_0:
-    case ARMMMUIdx_E10_1:
-        mecid = env->cp15.vmecid_p_el2;
-        break;
-    default:
-        g_assert_not_reached();
-    }
-
-    /* As per AArch64.S2OutputMECID(). */
-    mecid = amec ? env->cp15.vmecid_a_el2 : env->cp15.vmecid_p_el2;
 
     if (access_type == MMU_DATA_STORE) {
+       /* Store MECID for physical address 'pa'. */
        set_mecid(env, pa, mecid);
        return true;
     } else {
         uint32_t stored_mecid;
+        /* Load the MECID stored in memory for physical address 'pa'. */
         stored_mecid = get_mecid(env, pa);
         if (stored_mecid == mecid) {
             /* MECID is correct. */
@@ -3968,11 +3981,18 @@ static bool get_phys_addr_mec(CPUARMState *env, S1Translate *ptw,
                               ARMMMUFaultInfo *fi)
 
 {
+    /*
+     * After 'address' is resolved by get_phys_addr_nogpc() ptw->in_mmu_idx can
+     * change depending on the translation stages, hence save it for later.
+     * it.
+     */
+    ARMMMUIdx s1_mmu_idx = ptw->in_mmu_idx;
+
     if (get_phys_addr_gpc(env, ptw, address, access_type,
                           memop, result, fi)) {
         return true; /* Translation fault. */
     }
-    if (!mecid_check(env, ptw, access_type, result)) {
+    if (!mecid_check(env, ptw, access_type, result, s1_mmu_idx)) {
         return true; /* MECID mismatch. */
     }
     return false;
