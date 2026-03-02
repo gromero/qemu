@@ -3776,6 +3776,169 @@ static bool get_phys_addr_nogpc(CPUARMState *env, S1Translate *ptw,
     }
 }
 
+static uint32_t *get_mecid_ptr(CPUARMState *env, hwaddr pa)
+{
+    MemoryRegion *mr;
+    AddressSpace *mec_as;
+    hwaddr mec_paddr, xlat;
+    MemTxAttrs memattrs = { 0x0 };
+
+    /* Find out page number to use it as an offset in mec AS. */
+    mec_paddr = pa >> TARGET_PAGE_BITS;
+    /* MECIDs are kept in their own Address Space. */
+    mec_as = cpu_get_address_space(env_cpu(env), ARMASIdx_MEC);
+    mr = address_space_translate(mec_as, mec_paddr, &xlat, NULL, true, memattrs);
+
+    /*
+     * Return pointer in the mec AS associated to physical address 'pa', which
+     * is used to store the MECID.
+     */
+    return memory_region_get_ram_ptr(mr) + xlat;
+}
+
+static uint32_t get_mecid(CPUARMState *env, hwaddr pa)
+{
+    return *get_mecid_ptr(env, pa);
+}
+
+static void set_mecid(CPUARMState *env, hwaddr pa, uint32_t mecid)
+{
+    *get_mecid_ptr(env, pa) = mecid;
+}
+
+/*
+ * Returns 'false' on MECID mismatch and 'true' on MECID match (success).
+ */
+static bool mecid_check(CPUARMState *env, S1Translate *ptw, hwaddr va,
+                        MMUAccessType access_type, GetPhysAddrResult *result,
+                        ARMMMUIdx s1_mmu_idx)
+{
+    ARMSecuritySpace ss = ptw->out_space;
+    /* Final physical address after translation. */
+    hwaddr pa = result->f.phys_addr;
+    /* Find out which EL controls EMEC for Stage 1 translations. */
+    uint32_t el = regime_el(s1_mmu_idx) < 3 ? 2 : 3;
+
+    /* XXX(gromero): Do we need to check for SCR_EL3.SCTLR2En when el == 2? */
+    if (!(cpu_isar_feature(aa64_mec, env_archcpu(env)) &&
+        (env->cp15.sctlr2_el[el] & SCTLR2_EMEC))) {
+        /* FEAT_MEC is disabled. */
+        return true;
+    }
+
+    if (ss != ARMSS_Realm) {
+        /*
+         * GPT checks are already done, so if SS is Root here MECIDs are
+         * irrelevants for EL3 accesses. If SS is Secure or NonSecure that's not
+         * pertinent to FEAT_MEC. Hence, only proceed with MECID checks if SS is
+         * Realm.
+         */
+        return true;
+    }
+
+    /* XXX(gromero): Implement AMEC capture from table descriptors. */
+    bool amec = false;
+    bool varange_lower = extract64(va, 55, 1) ? false : true;
+    /* MECID in register set given a translation regime. */
+    uint32_t mecid;
+
+    ARMMMUIdx ptw_mmu_idx = ptw->in_mmu_idx; /* ARMMMUIdx after ptw. */
+    bool is_pa_from_s2 = regime_is_stage2(ptw_mmu_idx);
+    bool is_mmu_disabled = regime_translation_disabled(env, ptw_mmu_idx, ss);
+    if (is_pa_from_s2) { /* PA from Stage 2. */
+        /* As per AArch64.S2OutputMECID(). */
+        mecid = amec ? env->cp15.vmecid_a_el2 : env->cp15.vmecid_p_el2;
+
+    } else { /* PA from Stage 1. */
+        if (is_mmu_disabled) { /* PA from Stage 1 and MMU is disabled. */
+            /* As per AArch64.S1DisabledOutputMECID(). */
+            switch (s1_mmu_idx) {
+            case ARMMMUIdx_E3:
+            case ARMMMUIdx_E30_0:
+                /* No MECID check for accesses from EL3. */
+                return true;
+                break;
+            case ARMMMUIdx_E20_0:
+            case ARMMMUIdx_E20_2:
+                mecid = env->cp15.mecid_p0_el2;
+                break;
+            case ARMMMUIdx_E10_0:
+            case ARMMMUIdx_E10_1:
+                mecid = env->cp15.vmecid_p_el2;
+                break;
+            default:
+                g_assert_not_reached();
+            }
+
+        } else { /* PA from Stage 1 and MMU is enabled. */
+            /* As per AArch64.S1OutputMECID(). */
+            switch (s1_mmu_idx) {
+            case ARMMMUIdx_E3:
+                mecid = env->cp15.mecid_rl_a_el3;
+                break;
+            case ARMMMUIdx_E2:
+                mecid = amec ? env->cp15.mecid_a0_el2 : env->cp15.mecid_p0_el2;
+                break;
+            case ARMMMUIdx_E20_0:
+            case ARMMMUIdx_E20_2:
+                if (varange_lower) {
+                    mecid = amec ? env->cp15.mecid_a0_el2 : env->cp15.mecid_p0_el2;
+                } else {
+                    mecid = amec ? env->cp15.mecid_a1_el2 : env->cp15.mecid_p1_el2;
+                }
+                break;
+            case ARMMMUIdx_E10_0:
+            case ARMMMUIdx_E10_1:
+                mecid = env->cp15.vmecid_p_el2;
+                break;
+            default:
+                g_assert_not_reached();
+            }
+        }
+    }
+
+    if (access_type == MMU_DATA_STORE) {
+       /* Store MECID for physical address 'pa'. */
+       set_mecid(env, pa, mecid);
+       return true;
+    } else {
+        uint32_t stored_mecid;
+        /* Load the MECID stored in memory for physical address 'pa'. */
+        stored_mecid = get_mecid(env, pa);
+        if (stored_mecid == mecid) {
+            /* MECID is correct. */
+            return true;
+        } else {
+            /* MECID is incorrect, so return the substitute encrypted page. */
+            result->f.phys_addr = 0x0; /* Start of the page. */
+            result->f.attrs.encrypted = true; /* Substitute encrypted page. */
+            return false;
+        }
+    }
+}
+
+static bool get_phys_addr_mec(CPUARMState *env, S1Translate *ptw,
+                              vaddr address,
+                              MMUAccessType access_type, MemOp memop,
+                              GetPhysAddrResult *result,
+                              ARMMMUFaultInfo *fi)
+
+{
+    /*
+     * After 'address' is resolved by get_phys_addr_nogpc(), ptw->in_mmu_idx can
+     * change depending on the translation stages, hence save it for later.
+     */
+    ARMMMUIdx s1_mmu_idx = ptw->in_mmu_idx;
+
+    if (get_phys_addr_gpc(env, ptw, address, access_type, memop, result, fi)) {
+        return true; /* Translation fault. */
+    }
+    if (!mecid_check(env, ptw, address, access_type, result, s1_mmu_idx)) {
+        return true; /* MECID mismatch. */
+    }
+    return false;
+}
+
 static bool get_phys_addr_gpc(CPUARMState *env, S1Translate *ptw,
                               vaddr address,
                               MMUAccessType access_type, MemOp memop,
@@ -3916,7 +4079,7 @@ static hwaddr arm_cpu_get_phys_page(CPUARMState *env, vaddr addr,
     };
     GetPhysAddrResult res = {};
     ARMMMUFaultInfo fi = {};
-    bool ret = get_phys_addr_gpc(env, &ptw, addr, MMU_DATA_LOAD, 0, &res, &fi);
+    bool ret = get_phys_addr_mec(env, &ptw, addr, MMU_DATA_LOAD, 0, &res, &fi);
     *attrs = res.f.attrs;
 
     if (ret) {
