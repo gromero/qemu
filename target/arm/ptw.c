@@ -3517,6 +3517,60 @@ static bool get_phys_addr_disabled(CPUARMState *env,
     result->f.lg_page_size = TARGET_PAGE_BITS;
     result->cacheattrs.shareability = shareability;
     result->cacheattrs.attrs = memattr;
+
+    uint64_t mecid = env->cp15.mecid_p0_el2;
+
+    /*
+    printf("* phys_addr = %lx\n", address);
+    printf("* MECID_P0_EL2 = %lx\n", mecid);
+    printf("* access_type = %d\n", access_type);
+    */
+
+    if (mecid != 0) {
+        // printf("MECID is enabled!\n");
+
+        MemoryRegion *mr;
+        AddressSpace *mec_as;
+        hwaddr mec_paddr, xlat;
+        MemTxAttrs memattrs = { 0x0 };
+        void *p;
+
+        mec_paddr = address >> TARGET_PAGE_BITS;
+
+        mec_as = cpu_get_address_space(env_cpu(env), ARMASIdx_MEC);
+        mr = address_space_translate(mec_as, mec_paddr, &xlat, NULL, true, memattrs);
+
+        p = memory_region_get_ram_ptr(mr) + xlat;
+
+        // printf("* Phys. address %lx, in fpn = %lx, in MEC AS, is located at host addr: %p\n", address, (uint64_t) mec_paddr, p);
+
+#define MEC_MAGIC 0xbeef
+        uint32_t magic;
+        uint32_t mecid_;
+        uint32_t d;
+
+        d = *((uint32_t *)p);
+
+        magic = d >> 16;
+        mecid_ = d & 0xFFFF;
+
+        if (magic != MEC_MAGIC) {
+            d = (MEC_MAGIC << 16) | mecid;
+            *(uint32_t *)p = d;
+            // printf("* Tuple data slot initialized with: %x\n", d);
+        } else {
+            if (mecid_ != mecid) {
+                //printf("* Wrong MECID, returning fake encrypted page\n");
+                // Wrong encryption key, return fake encrypted page.
+                result->f.phys_addr = 0x0;   // Force offset 0
+                result->f.attrs.encrypted = true; // Use of encrypted page
+            }
+       }
+
+    } else {
+       // printf("MECID is disabled.\n");
+    }
+
     return false;
 }
 
@@ -3751,6 +3805,7 @@ static bool get_phys_addr_nogpc(CPUARMState *env, S1Translate *ptw,
     /* Definitely a real MMU, not an MPU */
 
     if (regime_translation_disabled(env, mmu_idx, ptw->in_space)) {
+        // printf("-------> vaddr = %lx\n", address);
         return get_phys_addr_disabled(env, ptw, address, access_type,
                                       result, fi);
     }
