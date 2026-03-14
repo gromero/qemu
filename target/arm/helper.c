@@ -5122,6 +5122,7 @@ static CPAccessResult mecid_access(CPUARMState *env,
     return CP_ACCESS_OK;
 }
 
+uint64_t last_value = 0;
 static void mecid_write(CPUARMState *env, const ARMCPRegInfo *ri,
                         uint64_t value)
 {
@@ -5129,6 +5130,11 @@ static void mecid_write(CPUARMState *env, const ARMCPRegInfo *ri,
 
     value = extract64(value, 0, MECID_WIDTH);
     raw_write(env, ri, value);
+    // printf("MECID %s written to: %ld\n", ri->name, value);
+    if (value != last_value) {
+        // printf("MECID %s written non-zero: %ld\n", ri->name, value);
+        last_value = value;
+    }
 }
 
 static CPAccessResult cipae_access(CPUARMState *env, const ARMCPRegInfo *ri,

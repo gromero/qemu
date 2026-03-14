@@ -2063,6 +2063,16 @@ static bool get_phys_addr_lpae(CPUARMState *env, S1Translate *ptw,
     }
     new_descriptor = descriptor;
 
+  /* XXX(gromero): Refator to get AMEC bit directly. */
+  if (descriptor & (1UL << 63)) {
+      //printf("ooops, found a AMEC bit in the descriptor! :)\n");
+      // exit(80);
+      //result->amec = true;
+  }
+
+     /* FEAT_MEC AMEC bit in the address descriptoir. */
+     result->amec = extract64(descriptor, 63, 1);
+
  restart_atomic_update:
     if (!(descriptor & 1) ||
         (!(descriptor & 2) &&
@@ -2100,6 +2110,11 @@ static bool get_phys_addr_lpae(CPUARMState *env, S1Translate *ptw,
         tableattrs |= extract64(descriptor, 59, 5);
         level++;
         indexmask = indexmask_grainsize;
+
+        if ((tableattrs >> 4) & 1) { /* AMEC = 1 */
+            exit(73);
+	}
+
         goto next_level;
     }
 
@@ -3829,8 +3844,10 @@ static uint32_t *get_mecid_ptr(CPUARMState *env, hwaddr pa)
 
     /* Find out page number to use it as an offset in mec AS. */
     mec_paddr = pa >> TARGET_PAGE_BITS;
+    mec_paddr *= 4; /* MECID sizeof = 4 bytes. */
     /* MECIDs are kept in their own Address Space. */
     mec_as = cpu_get_address_space(env_cpu(env), ARMASIdx_MEC);
+    // printf("mec_paddr = %#lx\n", mec_paddr);
     mr = address_space_translate(mec_as, mec_paddr, &xlat, NULL, true, memattrs);
 
     /*
@@ -3842,12 +3859,23 @@ static uint32_t *get_mecid_ptr(CPUARMState *env, hwaddr pa)
 
 static uint32_t get_mecid(CPUARMState *env, hwaddr pa)
 {
-    return *get_mecid_ptr(env, pa);
+    uint32_t *ptr;
+    ptr = get_mecid_ptr(env, pa);
+
+    // printf("GET: ptr %p = MECID %d\n", ptr, *ptr);
+    return *ptr;
 }
 
 static void set_mecid(CPUARMState *env, hwaddr pa, uint32_t mecid)
 {
-    *get_mecid_ptr(env, pa) = mecid;
+    uint32_t *ptr;
+    ptr = get_mecid_ptr(env, pa);
+    // printf("SET: ptr %p = MECID %d\n", ptr, mecid);
+    //if (mecid == 3) { printf("while\n"); while(mecid == 3); } 
+    
+    *ptr = mecid;
+    // *get_mecid_ptr(env, pa) = mecid;
+
 }
 
 /*
@@ -3860,6 +3888,24 @@ static bool mecid_check(CPUARMState *env, S1Translate *ptw, hwaddr va,
     ARMSecuritySpace ss = ptw->out_space;
     /* Final physical address after translation. */
     hwaddr pa = result->f.phys_addr;
+
+    switch (s1_mmu_idx) {
+    case ARMMMUIdx_Phys_S:
+    case ARMMMUIdx_Phys_NS:
+    case ARMMMUIdx_Phys_Root:
+    case ARMMMUIdx_Phys_Realm:
+    case ARMMMUIdx_Stage2:
+    case ARMMMUIdx_Stage2_S:
+    /* In the middle of a translation, so result->f.phys_addr has no PA yet. */
+        return true;
+        break;
+    default:
+        /* Pass */
+        break;
+    }
+
+    // exit(68);
+
     /* Find out which EL controls EMEC for Stage 1 translations. */
     uint32_t el = regime_el(s1_mmu_idx) < 3 ? 2 : 3;
 
@@ -3869,6 +3915,8 @@ static bool mecid_check(CPUARMState *env, S1Translate *ptw, hwaddr va,
         /* FEAT_MEC is disabled. */
         return true;
     }
+
+    // exit(69);
 
     if (ss != ARMSS_Realm) {
         /*
@@ -3881,17 +3929,66 @@ static bool mecid_check(CPUARMState *env, S1Translate *ptw, hwaddr va,
     }
 
     /* XXX(gromero): Implement AMEC capture from table descriptors. */
-    bool amec = false;
+    bool amec = result->amec;
     bool varange_lower = extract64(va, 55, 1) ? false : true;
     /* MECID in register set given a translation regime. */
     uint32_t mecid;
 
     ARMMMUIdx ptw_mmu_idx = ptw->in_mmu_idx; /* ARMMMUIdx after ptw. */
+
+    switch (ptw_mmu_idx) {
+    case ARMMMUIdx_Stage2:
+    case ARMMMUIdx_Stage2_S:
+    /* In the middle of a two stage translation, so result->f.phys_addr has no PA yet. */
+        return true;
+        break;
+    default:
+        /* Pass */
+        break;
+    }
+   
     bool is_pa_from_s2 = regime_is_stage2(ptw_mmu_idx);
     bool is_mmu_disabled = regime_translation_disabled(env, ptw_mmu_idx, ss);
     if (is_pa_from_s2) { /* PA from Stage 2. */
         /* As per AArch64.S2OutputMECID(). */
         mecid = amec ? env->cp15.vmecid_a_el2 : env->cp15.vmecid_p_el2;
+/*
+      [ARMMMUIdx_E10_0]           = EL(0) | REL(1) | R2 | TG(E10_0),
+      [ARMMMUIdx_E10_0_GCS]       = EL(0) | REL(1) | R2 | GCS,
+      [ARMMMUIdx_E10_1]           = EL(1) | REL(1) | R2 | TG(E10_1),
+      [ARMMMUIdx_E10_1_PAN]       = EL(1) | REL(1) | R2 | TG(E10_1) | PAN,
+      [ARMMMUIdx_E10_1_GCS]       = EL(1) | REL(1) | R2 | GCS,
+  
+      [ARMMMUIdx_E20_0]           = EL(0) | REL(2) | R2 | TG(E20_0),
+      [ARMMMUIdx_E20_0_GCS]       = EL(0) | REL(2) | R2 | GCS,
+      [ARMMMUIdx_E20_2]           = EL(2) | REL(2) | R2 | TG(E20_2),
+      [ARMMMUIdx_E20_2_PAN]       = EL(2) | REL(2) | R2 | TG(E20_2) | PAN,
+      [ARMMMUIdx_E20_2_GCS]       = EL(2) | REL(2) | R2 | GCS,
+  
+      [ARMMMUIdx_E2]              = EL(2) | REL(2) | TG(E2),
+      [ARMMMUIdx_E2_GCS]          = EL(2) | REL(2) | GCS,
+  
+      [ARMMMUIdx_E3]              = EL(3) | REL(3) | TG(E3),
+      [ARMMMUIdx_E3_GCS]          = EL(3) | REL(3) | GCS,
+      [ARMMMUIdx_E30_0]           = EL(0) | REL(3),
+      [ARMMMUIdx_E30_3_PAN]       = EL(3) | REL(3) | PAN,
+*/
+/*
+              idx = ARMMMUIdx_E10_0;
+              idx = ARMMMUIdx_E10_1;
+              idx = ARMMMUIdx_E10_1_PAN;
+
+              idx = ARMMMUIdx_E2;
+
+              idx = ARMMMUIdx_E20_0;
+              idx = ARMMMUIdx_E20_2;
+              idx = ARMMMUIdx_E20_2_PAN;
+
+             return ARMMMUIdx_E3;
+
+              idx = ARMMMUIdx_E30_0;
+             return ARMMMUIdx_E30_3_PAN;
+*/
 
     } else { /* PA from Stage 1. */
         if (is_mmu_disabled) { /* PA from Stage 1 and MMU is disabled. */
@@ -3925,6 +4022,7 @@ static bool mecid_check(CPUARMState *env, S1Translate *ptw, hwaddr va,
                 break;
             case ARMMMUIdx_E20_0:
             case ARMMMUIdx_E20_2:
+            case ARMMMUIdx_E20_2_PAN:
                 if (varange_lower) {
                     mecid = amec ? env->cp15.mecid_a0_el2 : env->cp15.mecid_p0_el2;
                 } else {
@@ -3936,13 +4034,21 @@ static bool mecid_check(CPUARMState *env, S1Translate *ptw, hwaddr va,
                 mecid = env->cp15.vmecid_p_el2;
                 break;
             default:
+		printf("s1_mmu_idx = %d\n", s1_mmu_idx);
                 g_assert_not_reached();
             }
         }
     }
 
+    if (mecid != 0) {
+    //    printf("MECID (from register) selected for va = %lx pa = %lx is %d, s1_mmu_idx = %d and ptw->in_mmu_idx = %d\n", va, pa, mecid, s1_mmu_idx, ptw_mmu_idx);
+    }
+
     if (access_type == MMU_DATA_STORE) {
        /* Store MECID for physical address 'pa'. */
+       if (mecid != 0) {
+        //   printf("MECID (from register) store for va = %lx pa= %lx is %d, s1_mmu_idx = %d and ptw->in_mmu_idx = %d\n", va, pa, mecid, s1_mmu_idx, ptw_mmu_idx);
+       }
        set_mecid(env, pa, mecid);
        return true;
     } else {
@@ -3951,11 +4057,16 @@ static bool mecid_check(CPUARMState *env, S1Translate *ptw, hwaddr va,
         stored_mecid = get_mecid(env, pa);
         if (stored_mecid == mecid) {
             /* MECID is correct. */
+            if (mecid != 0) {
+             //   printf("MECID match at va = %lx pa = %lx,  MECID %d (register) == %d (memory). s1_mmu_idx = %d and ptw->in_mmu_idx = %d\n", va, pa, mecid, stored_mecid, s1_mmu_idx, ptw_mmu_idx);
+            }
             return true;
         } else {
             /* MECID is incorrect, so return the substitute encrypted page. */
+            printf("MECID mismatch at va = %lx pa = %lx MECID should be %d (register) but is %d (memory). s1_mmu_idx = %d and ptw->in_mmu_idx = %d\n", va, pa, mecid, stored_mecid, s1_mmu_idx, ptw_mmu_idx);
             result->f.phys_addr = 0x0; /* Start of the page. */
             result->f.attrs.encrypted = true; /* Substitute encrypted page. */
+	    exit(70);
             return false;
         }
     }
@@ -4124,7 +4235,7 @@ bool get_phys_addr(CPUARMState *env, vaddr address,
         .in_prot_check = 1 << access_type,
     };
 
-    return get_phys_addr_gpc(env, &ptw, address, access_type,
+    return get_phys_addr_mec(env, &ptw, address, access_type,
                              memop, result, fi);
 }
 
