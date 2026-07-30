@@ -63,6 +63,7 @@
 #include "qemu/osdep.h"
 #include "hw/pci/msi.h"
 #include "hw/pci/pci.h"
+#include "hw/pci/pcie_tdisp.h"
 #include "migration/vmstate.h"
 #include "qemu/module.h"
 #include "hw/isa/isa.h"
@@ -243,10 +244,18 @@ static void ich_write_config(PCIDevice *dev, uint32_t address,
     pci_default_write_config(dev, address, val, len);
 }
 
+static uint8_t get_device_interface_state(PcieTdispIf *pt)
+{
+    PCIDevice *dev = PCI_DEVICE(pt);
+
+    return pcie_tdisp_get_device_interface_state(dev);
+}
+
 static void ich_ahci_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
+    PcieTdispIfClass *ptc = PCIE_TDISP_IF_CLASS(klass);
 
     k->realize = pci_ich9_ahci_realize;
     k->config_write = ich_write_config;
@@ -260,6 +269,7 @@ static void ich_ahci_class_init(ObjectClass *klass, const void *data)
     device_class_set_props(dc, ich_props);
     device_class_set_legacy_reset(dc, pci_ich9_reset);
     set_bit(DEVICE_CATEGORY_STORAGE, dc->categories);
+    ptc->get_device_interface_state = get_device_interface_state;
 }
 
 static const TypeInfo ich_ahci_info = {
@@ -270,6 +280,7 @@ static const TypeInfo ich_ahci_info = {
     .class_init    = ich_ahci_class_init,
     .interfaces = (const InterfaceInfo[]) {
         { INTERFACE_PCIE_DEVICE },
+        { TYPE_PCIE_TDISP_IF },
         { },
     },
 };

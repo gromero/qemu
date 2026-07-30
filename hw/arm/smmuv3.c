@@ -26,6 +26,7 @@
 #include "hw/core/qdev.h"
 #include "hw/pci/pci.h"
 #include "hw/pci/msi.h"
+#include "hw/pci/pcie_tdisp.h"
 #include "cpu.h"
 #include "exec/target_page.h"
 #include "target/arm/internals.h"
@@ -1363,6 +1364,25 @@ static IOMMUTLBEntry smmuv3_translate(IOMMUMemoryRegion *mr, hwaddr addr,
 
     int bus_num = PCI_BUS_NUM(sid);
     PCIDevice *dev = pci_find_device(sdev->bus, bus_num, sdev->devfn);
+
+    PcieTdispIf *pt;
+    uint8_t tdisp_state __attribute__((unused)) = 0;
+    if ((pt = (PcieTdispIf *)object_dynamic_cast(OBJECT(dev), TYPE_PCIE_TDISP_IF))) {
+        PcieTdispIfClass *ptc = PCIE_TDISP_IF_GET_CLASS(dev);
+        if (ptc->get_device_interface_state) {
+            tdisp_state = ptc->get_device_interface_state(pt);
+        }
+    }
+
+#define CONFIG_UNLOCKED 0
+#define CONFIG_LOCKED   1
+#define RUN             2
+#define ERROR           3
+    if (tdisp_state == CONFIG_LOCKED || tdisp_state == RUN) {
+        printf("T-bit is set!\n");
+        exit(90);
+    }
+
     if (sec_sid == SMMU_SEC_SID_R && addr == msi_message_address_register(dev)) {
         sec_sid = SMMU_SEC_SID_NS;
     }

@@ -11,6 +11,7 @@
 #define PCIE_DOE_H
 
 #include "qemu/range.h"
+#include "qemu/thread.h"
 #include "hw/core/register.h"
 
 /*
@@ -111,6 +112,9 @@ struct DOECap {
 
     /* Used for spdm-socket */
     int spdm_socket;
+
+    /* Used for accessing spdm_socket */
+    QemuMutex spdm_lock;
 };
 
 void pcie_doe_init(PCIDevice *pdev, DOECap *doe_cap, uint16_t offset,

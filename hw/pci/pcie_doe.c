@@ -115,6 +115,8 @@ void pcie_doe_init(PCIDevice *dev, DOECap *doe_cap, uint16_t offset,
 
     /* Increment to allow for the discovery protocol */
     doe_cap->protocol_num++;
+
+    qemu_mutex_init(&doe_cap->spdm_lock);
 }
 
 void pcie_doe_fini(DOECap *doe_cap)
