@@ -410,6 +410,8 @@ static void smmuv3_init_id_regs(SMMUv3State *s)
     bk->idr[0] = FIELD_DP32(bk->idr[0], IDR0, ASID16, 1); /* 16-bit ASID */
     bk->idr[0] = FIELD_DP32(bk->idr[0], IDR0, VMID16, 1); /* 16-bit VMID */
     bk->idr[0] = FIELD_DP32(bk->idr[0], IDR0, TTENDIAN, 2); /* little endian */
+    /* Root and Realm register pages are implemented (see SMMU_ROOT_IDR0) */
+    bk->idr[0] = FIELD_DP32(bk->idr[0], IDR0, RME_IMPL, 1);
     bk->idr[0] = FIELD_DP32(bk->idr[0], IDR0, STALL_MODEL, 1); /* No stall */
     /* terminated transaction will always be aborted/error returned */
     bk->idr[0] = FIELD_DP32(bk->idr[0], IDR0, TERM_MODEL, 1);
