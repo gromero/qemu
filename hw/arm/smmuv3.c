@@ -492,6 +492,12 @@ static void smmuv3_reset(SMMUv3State *s)
     /* Initialize Root bank */
     s->root.idr0 = FIELD_DP32(s->root.idr0, ROOT_IDR0, ROOT_IMPL, 1);
     s->root.idr0 = FIELD_DP32(s->root.idr0, ROOT_IDR0, REALM_IMPL, 1);
+    /*
+     * Realm register page 0 lives at SMMU_REALM_REG_START, and the Root page
+     * at SMMU_ROOT_REG_START. Advertise it: O_REALM = 0x20000 + BA_REALM * 64K
+     */
+    s->root.idr0 = FIELD_DP32(s->root.idr0, ROOT_IDR0, BA_REALM,
+                              (SMMU_REALM_REG_START - 0x20000) / 0x10000);
 
     /* Initialize Realm bank */
     bk = smmuv3_bank(s, SMMU_SEC_SID_R);
